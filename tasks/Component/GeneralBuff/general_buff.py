@@ -212,11 +212,19 @@ class GeneralBuff(BaseTask, GeneralBuffAssets):
         :return:
         """
         logger.info('Awake buff')
-        self.screenshot()
-        area = self.get_area_image(self.I_AWAKE)
-        if not area:
-            logger.warning('No awake buff')
-            return None
+        max_swipe = 4
+        while True:
+            self.screenshot()
+            area = self.get_area_image(self.I_AWAKE)
+            if area:
+                break
+            if max_swipe <= 0:
+                logger.warning('No awake buff after swipes')
+                return None
+            # 觉醒加成可能被顶出屏幕, 往上滑动列表把它翻出来
+            self.device.swipe(p2=(530, 240), p1=(580, 320))
+            max_swipe -= 1
+            time.sleep(1)
         self.set_switch_area(area)
         if is_open:
             logger.info('Start open awake buff')
@@ -233,11 +241,19 @@ class GeneralBuff(BaseTask, GeneralBuffAssets):
         :return:
         """
         logger.info('Soul buff')
-        self.screenshot()
-        area = self.get_area_image(self.I_SOUL)
-        if not area:
-            logger.warning('No soul buff')
-            return None
+        max_swipe = 4
+        while True:
+            self.screenshot()
+            area = self.get_area_image(self.I_SOUL)
+            if area:
+                break
+            if max_swipe <= 0:
+                logger.warning('No soul buff after swipes')
+                return None
+            # 御魂加成可能排在列表下面, 往上滑动列表把它翻出来
+            self.device.swipe(p2=(530, 240), p1=(580, 320))
+            max_swipe -= 1
+            time.sleep(1)
         self.set_switch_area(area)
         if is_open:
             logger.info('Start open soul buff')
