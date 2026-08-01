@@ -4,6 +4,7 @@
 import time
 import re
 from cached_property import cached_property
+from module.base.timer import Timer
 from tasks.GameUi.default_pages import page_exploration
 
 from tasks.base_task import BaseTask
@@ -93,9 +94,11 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 # 已经没有可以挑战的了，只能刷新
                 if con.raid_config.when_attack_fail == WhenAttackFail.CONTINUE:
                     logger.info('No one can attack and then refresh')
-                    if self.check_refresh():
+                    # 刷新列表: 若刷新按钮 CD 中, 等待 CD 结束再刷; 刷新后仍无目标则重试, 超过上限直接退出
+                    if self.refresh_with_cd_wait(max_tries=2):
                         continue
                     else:
+                        logger.warning('No target available after refresh retries, exit realm raid')
                         success = False
                         break
                 else:
@@ -421,19 +424,97 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         if not self.appear(self.I_FRESH):
             logger.info(f'No find refresh button and it is in CD')
             return False
+        # 等待确认弹窗出现，带超时保护防止刷新动画异常时无限循环
+        ensure_timer = Timer(5)
+        ensure_timer.start()
         while 1:
             self.screenshot()
             if self.appear(self.I_FRESH_ENSURE):
                 break
             if self.appear_then_click(self.I_FRESH, interval=1):
                 continue
+            if ensure_timer.reached():
+                logger.warning('Refresh confirm window not appear within 5s, give up refresh')
+                return False
+        # 等待确认弹窗消失，带超时保护
+        done_timer = Timer(5)
+        done_timer.start()
         while 1:
             self.screenshot()
             if not self.appear(self.I_FRESH_ENSURE):
+                # 刷新动画未完全结束就扫描容易误判"无目标可打", 等待动画稳定后再返回
+                time.sleep(2)
                 return True
             if self.appear_then_click(self.I_FRESH_ENSURE, interval=1):
                 continue
+            if done_timer.reached():
+                logger.warning('Refresh confirm window not disappear within 5s, give up refresh')
+                return False
         return False
+
+    def refresh_with_cd_wait(self, max_tries: int = 2, cd_wait_limit: int = 200) -> bool:
+        """
+        无可打目标时的刷新逻辑: 若刷新按钮 CD 中则等待 CD 结束再刷, 刷新后重新扫描。
+        仍无目标则重试, 超过 max_tries 次直接返回 False 让任务优雅退出。
+
+        Args:
+            max_tries: 最大刷新尝试次数（含 CD 等待后的再次刷新）。
+            cd_wait_limit: 单次等待刷新 CD 的最长秒数（刷新 CD 为 3 分钟, 默认 200s 留有余量）。
+
+        Returns:
+            bool: 刷新后找到可打目标返回 True, 否则 False。
+        """
+        for attempt in range(1, max_tries + 1):
+            logger.info(f'Refresh attempt {attempt}/{max_tries}')
+            # 先确保刷新按钮可用: CD 中则等待 CD 结束
+            self.screenshot()
+            if not self.appear(self.I_FRESH):
+                logger.info(f'Refresh button in CD, waiting (attempt {attempt}/{max_tries})')
+                if not self.wait_fresh_cd(timeout=cd_wait_limit):
+                    return False
+            # 按钮可用后点击刷新
+            if not self.check_refresh():
+                logger.warning(f'Refresh attempt {attempt} failed')
+                continue
+            # 刷新成功, 动画等待已在 check_refresh 内完成, 重新扫描
+            self.screenshot()
+            medal, index = self.find_one(False)
+            if medal and index:
+                return True
+            logger.info(f'Refresh attempt {attempt} done but still no target')
+        return False
+
+    def wait_fresh_cd(self, timeout: int = 200) -> bool:
+        """
+        等待刷新按钮 CD 结束。不依赖 OCR 读剩余时间(容易误读), 直接按固定节奏
+        轮询刷新按钮是否恢复可用(模板匹配, 与 check_refresh 同一判断依据)。
+
+        注意: 等待可能超过设备层 60s 普通卡死保护, 必须挂 PAUSE 长等待标记
+        (stuck_long_wait_list 内, 放宽到 300s), 结束时清除。
+
+        Args:
+            timeout: 最长等待秒数(刷新 CD 为 3 分钟, 默认 200s 留有余量)。
+
+        Returns:
+            bool: CD 结束后刷新按钮可用返回 True, 超时返回 False。
+        """
+        self.device.stuck_record_clear()
+        self.device.stuck_record_add('PAUSE')
+        try:
+            timer = Timer(timeout)
+            timer.start()
+            while 1:
+                if timer.reached():
+                    logger.warning(f'Wait refresh CD timeout after {timeout}s')
+                    return False
+                # 低频轮询: 降低截图频率避免触发卡死检测, 也能在按钮提前恢复时及时感知
+                time.sleep(15)
+                self.screenshot()
+                if self.appear(self.I_FRESH):
+                    logger.info('Refresh button available after CD')
+                    return True
+        finally:
+            self.device.stuck_record_clear()
 
     def fire(self, order: int) -> bool:
         """
