@@ -3,6 +3,7 @@
 # github https://github.com/runhey
 import time
 
+import cv2
 import random
 import re
 from datetime import datetime, time
@@ -120,6 +121,28 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
         self.wait_until_appear(self.I_AB_CLOSE_RED)
         self.ui_click(self.I_AB_CLOSE_RED, self.I_FILTER)
 
+    def appear_lit(self, target: RuleImage, s_threshold: int = 100) -> bool:
+        """
+        挑战图章"亮着"判定: 模板匹配 + 饱和度校验。
+        归一化模板匹配分不出亮暗(暗图章形状相同也能配到0.87),
+        暗图章是灰色(饱和度S<20), 亮图章是橙色(S>160), 用饱和度一刀切。
+        :param target: 挑战图章 RuleImage
+        :param s_threshold: 饱和度阈值, 默认100(实测暗9/亮164, 余量10倍)
+        :return: True=图章亮着可挑战, False=未匹配到或是暗的
+        """
+        if not self.appear(target):
+            return False
+        x, y, w, h = target.roi_front
+        region = self.device.image[y:y + h, x:x + w]
+        if region.size == 0:
+            return False
+        s_mean = float(cv2.cvtColor(region, cv2.COLOR_BGR2HSV)[:, :, 1].mean())
+        if s_mean <= s_threshold:
+            logger.warning(f'{target.name} is dark (S={s_mean:.0f} <= {s_threshold}), already challenged today, skip')
+            return False
+        logger.info(f'{target.name} is lit (S={s_mean:.0f})')
+        return True
+
     def boss_fight(self, battle: RuleImage, ultra: bool = False, fileter_open: bool = True) -> bool:
         """
             完成挑战一个鬼王的全流程
@@ -135,6 +158,9 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
         reward_floor = self.config.area_boss.boss.reward_floor
         if fileter_open and not self.appear(self.I_AB_FILTER_OPENED):
             self.open_filter()
+        # 挑战图章是暗的(今日已挑战)直接跳过, 不用浪费时间盲点三次
+        if battle in (self.I_BATTLE_1, self.I_BATTLE_2, self.I_BATTLE_3) and not self.appear_lit(battle):
+            return False
         # 如果打不开鬼王详情界面,直接退出
         if not self.open_boss_detail(battle, 3):
             return False
