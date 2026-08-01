@@ -6,46 +6,76 @@ import time
 from tasks.Component.GeneralBuff.assets import GeneralBuffAssets
 from module.atom.ocr import RuleOcr
 from module.atom.image import RuleImage
+from module.base.timer import Timer
 from tasks.base_task import BaseTask
 from module.logger import logger
 from typing import Optional
 
 
 class GeneralBuff(BaseTask, GeneralBuffAssets):
+    # buff 界面正常打开/关闭在 1-3 秒内完成, 超时给 15 秒足够余量
+    BUFF_WAIT_TIMEOUT = 15
 
-    def open_buff(self):
+    def open_buff(self) -> bool:
         """
         打开buff的总界面
-        :return:
+        :return: True 打开成功; False 超时未打开(调用方应跳过 buff 相关流程)
         """
         logger.info('Open buff')
-        while 1:
-            self.screenshot()
-            if self.appear(self.I_CLOUD):
-                break
-            if self.appear_then_click(self.I_BUFF_1, interval=2):
-                continue
+        # 防止长时间等待触发设备层 60s 普通卡死保护, 挂 PAUSE 长等待标记
+        self.device.stuck_record_clear()
+        self.device.stuck_record_add('PAUSE')
+        try:
+            timer = Timer(self.BUFF_WAIT_TIMEOUT)
+            timer.start()
+            while 1:
+                self.screenshot()
+                if self.appear(self.I_CLOUD):
+                    break
+                if self.appear_then_click(self.I_BUFF_1, interval=2):
+                    continue
+                if timer.reached():
+                    logger.warning('Open buff timeout, skip buff flow')
+                    return False
 
-        check_image = self.I_AWAKE
-        while 1:
-            self.screenshot()
-            if self.appear(check_image):
-                break
+            check_image = self.I_AWAKE
+            timer = Timer(self.BUFF_WAIT_TIMEOUT)
+            timer.start()
+            while 1:
+                self.screenshot()
+                if self.appear(check_image):
+                    break
+                self.swipe(self.S_BUFF_UP, interval=2)
+                if timer.reached():
+                    logger.warning('Open buff scroll timeout, skip buff flow')
+                    return False
+            return True
+        finally:
+            self.device.stuck_record_clear()
 
-            self.swipe(self.S_BUFF_UP, interval=2)
-
-    def close_buff(self):
+    def close_buff(self) -> bool:
         """
         关闭buff的总界面, 但是要确保buff界面已经打开了
-        :return:
+        :return: True 关闭成功; False 超时(界面可能已不在)
         """
         logger.info('Close buff')
-        while 1:
-            self.screenshot()
-            if not self.appear(self.I_CLOUD):
-                break
-            if self.appear_then_click(self.I_BUFF_1, interval=2):
-                continue
+        # 同上, 挂 PAUSE 防 60s 普通卡死保护误杀
+        self.device.stuck_record_clear()
+        self.device.stuck_record_add('PAUSE')
+        try:
+            timer = Timer(self.BUFF_WAIT_TIMEOUT)
+            timer.start()
+            while 1:
+                self.screenshot()
+                if not self.appear(self.I_CLOUD):
+                    return True
+                if self.appear_then_click(self.I_BUFF_1, interval=2):
+                    continue
+                if timer.reached():
+                    logger.warning('Close buff timeout, give up')
+                    return False
+        finally:
+            self.device.stuck_record_clear()
 
     def get_area(self, buff: RuleOcr) -> Optional[tuple[int, int, int, int]]:
         """

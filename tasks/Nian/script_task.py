@@ -90,12 +90,16 @@ class ScriptTask(GameUi, GeneralBattle, SwitchSoul, GeneralRoom, GeneralInvite, 
                         buff = None
                     self.run_general_battle(config=self.battle_config, buff=buff)
                     # 打完后返回庭院，记得关闭buff
-                    self.open_buff()
-                    if con.buff_gold_50_click:
-                        self.gold_50(False)
-                    if con.buff_gold_100_click:
-                        self.gold_100(False)
-                    self.close_buff()
+                    # 若 buff 界面打开失败(超时), 直接跳过关闭流程收尾, 避免在异常界面死循环
+                    # (open_buff 已挂 PAUSE + 15s 超时, 不再触发 60s 卡死保护)
+                    if self.open_buff():
+                        if con.buff_gold_50_click:
+                            self.gold_50(False)
+                        if con.buff_gold_100_click:
+                            self.gold_100(False)
+                        self.close_buff()
+                    else:
+                        logger.warning('Open buff failed after battle, skip buff close and finish task')
                     break
                 else:
                     break
