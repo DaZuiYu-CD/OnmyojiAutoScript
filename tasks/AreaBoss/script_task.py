@@ -408,12 +408,18 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
 
         while try_num > 0:
             self.click(battle, interval=3)
-            if self.wait_until_appear(self.I_AB_CLOSE_RED, wait_time=3):
+            # 详情页打开确认: 挑战按钮(I_FIRE)或红色关闭按钮任一出现即算打开。
+            # 7/30商店街改版后I_AB_CLOSE_RED在详情页刚打开时匹配极不稳定
+            # (滑入动画+半透明底, 三号实测多次4/4超时), 而I_FIRE实测匹配稳定
+            # (主号13:31直接配到并点击); I_FIRE对筛选面板仅0.229, 无误判风险。
+            if self.wait_until_appear(self.I_FIRE, wait_time=4):
+                break
+            if self.appear(self.I_AB_CLOSE_RED):
                 break
             try_num -= 1
         # 打开鬼王详情界面失败,直接返回
         self.screenshot()
-        if self.appear(self.I_AB_CLOSE_RED):
+        if self.appear(self.I_FIRE) or self.appear(self.I_AB_CLOSE_RED):
             return True
         return False
 
