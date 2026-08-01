@@ -201,7 +201,8 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
         self.config.daily_trifles.done_record.store_sign_dt = datetime.now()
         self.goto_page(page_store_gift_room)
         self.screenshot()
-        self.appear_then_click(self.I_GIFT_RECOMMEND, interval=1)
+        # 新版礼包屋: 点未选中态的"日常"灯笼切到日常页; 已选中时双态互配仅0.47-0.58<0.8不会误点
+        self.appear_then_click(self.I_GIFT_DAILY_OFF, interval=1)
         logger.info('Enter store sign')
         sleep(1)  # 等个动画
         self.screenshot()

@@ -36,6 +36,24 @@
     "description": "体力"
   },
   {
+    "itemName": "gift_daily_on",
+    "imageName": "store_gift_daily_on.png",
+    "roiFront": "1152,190,66,95",
+    "roiBack": "1130,60,135,580",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "新版礼包屋右侧竖排日常灯笼标签-选中态(页面到达锚点)"
+  },
+  {
+    "itemName": "gift_daily_off",
+    "imageName": "store_gift_daily_off.png",
+    "roiFront": "1150,470,66,95",
+    "roiBack": "1130,60,135,580",
+    "method": "Template matching",
+    "threshold": 0.8,
+    "description": "新版礼包屋右侧竖排日常灯笼标签-未选中态(点击切换到日常页)"
+  },
+  {
     "itemName": "store_cost_type_jade",
     "imageName": "store_cost_type_jade.png",
     "roiFront": "600,490,50,60",

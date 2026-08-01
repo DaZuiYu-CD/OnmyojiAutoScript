@@ -1,10 +1,10 @@
 from tasks.DailyTrifles.assets import DailyTriflesAssets
 from tasks.GameUi.default_pages import page_friends
-from tasks.GameUi.page import Page, page_mall
+from tasks.GameUi.page import Page, page_mall, any_of
 from tasks.GlobalGame.assets import GlobalGameAssets
 
-# 商店礼包屋页面
-page_store_gift_room = Page(DailyTriflesAssets.I_GIFT_RECOMMEND)
+# 商店礼包屋页面(7/30商店街改版后右侧竖排"推荐"标签已不存在, 改用"日常"灯笼选中/未选中双态锚点)
+page_store_gift_room = Page(any_of(DailyTriflesAssets.I_GIFT_DAILY_ON, DailyTriflesAssets.I_GIFT_DAILY_OFF))
 page_store_gift_room.connect(page_mall, GlobalGameAssets.I_UI_BACK_YELLOW, key="page_store_gift_room->page_mall")
 page_mall.connect(page_store_gift_room, DailyTriflesAssets.I_ROOM_GIFT, key="page_mall->page_store_gift_room")
 # 好友吉闻页面
