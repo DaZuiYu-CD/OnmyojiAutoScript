@@ -24,6 +24,7 @@ from module.server.config_manager import (
 )
 from module.server.main_manager import mm
 from module.server.script_process import ScriptProcess, ScriptState
+from module.server.favorites_store import favorites_of, set_favorite
 
 from tasks.Component.config_base import TimeDelta
 
@@ -38,6 +39,27 @@ async def script_test():
 @script_app.get('/script_menu')
 async def script_menu():
     return mm.config_cache('template').gui_menu_list
+
+
+# ----------------------------------   常用任务(收藏)   ----------------------------------
+@script_app.get('/favorites')
+async def favorites_list(config: str):
+    """返回指定配置的常用任务名列表。"""
+    return favorites_of(config)
+
+
+@script_app.put('/favorites/toggle')
+async def favorites_toggle(config: str, task: str, favorite: bool):
+    """设置/取消某个任务的常用标记, 返回更新后的列表。"""
+    config = (config or '').strip()
+    task = (task or '').strip()
+    if config not in mm.all_script_files():
+        raise HTTPException(status_code=404, detail=f'Config not found: {config}')
+    task_key = convert_to_underscore(task)
+    model_fields = type(mm.config_cache(config).model).model_fields
+    if not task_key or task_key not in model_fields:
+        raise HTTPException(status_code=404, detail=f'Task not found: {task}')
+    return set_favorite(config, task, favorite)
 # ----------------------------------   配置文件管理   ----------------------------------
 @script_app.get('/config_list')
 async def config_list():
