@@ -69,6 +69,10 @@ class ConfigValidationError(ValueError):
         self.fields = fields
 
 class ConfigManager:
+    # 非账号配置的保留文件(不参与账号列表, 禁止删除):
+    # favorites.json 为常用任务收藏的独立存储, 放在 config/ 目录但语义上不是账号
+    RESERVED_CONFIG_FILES = {'favorites'}
+
     @staticmethod
     def config_dir() -> Path:
         return Path.cwd() / 'config'
@@ -475,8 +479,12 @@ class ConfigManager:
         config_path = Path.cwd() / 'config'
         json_files = config_path.glob('*.json')
         result = []
+        # 非账号配置的保留文件: favorites.json 是常用任务收藏的独立存储,
+        # 不是账号配置, 不能出现在配置列表里(否则会被当成账号误删/误操作)
+        # 8-02事故: favorites.json被 all_script_files 暴露为假账号, DELETE /config 误删
+        reserved = ConfigManager.RESERVED_CONFIG_FILES
         for json in json_files:
-            if json.stem == 'template':
+            if json.stem == 'template' or json.stem in reserved:
                 continue
             result.append(json.stem)
         if len(result) == 0:
@@ -579,6 +587,11 @@ class ConfigManager:
         :param file:  不带json后缀
         :return: True or False
         """
+        # 保护保留文件: favorites.json 是收藏存储不是账号, 禁止删除
+        # 8-02事故: DELETE /config?name=favorites 把收藏文件误删导致常用标记丢失
+        if file in ConfigManager.RESERVED_CONFIG_FILES:
+            logger.warning(f'{file} is a reserved config file, delete blocked')
+            return False
         config_path = Path.cwd() / 'config'
         file_path = config_path / f'{file}.json'
         if not file_path.exists():
