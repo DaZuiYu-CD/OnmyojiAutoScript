@@ -79,37 +79,47 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
             find_btn_clicked = False
             timer_find_boss = Timer(10 * 60)
             timer_find_boss.start()
-            while 1:
-                self.screenshot()
-                if self.appear(self.I_BOSS_FIRE) or self.appear(self.I_BEST_BOSS_FIRE):
-                    break
-                if timer_find_boss.reached():
-                    logger.warning('find boss timeout')
-                    self.set_next_run(task='DemonEncounter', success=False, finish=True, server=False)
-                    raise TaskEnd('DemonEncounter')
-                if self.appear(self.I_JADE_50):
-                    # 没找到boss但地图中央出现宝箱，导致点击宝箱出现50勾玉购买界面
-                    self.ui_click_until_smt_disappear(self.I_DE_FIND, self.I_JADE_50, interval=1)
-                    continue
-                if find_btn_clicked and self.click(self.C_DM_BOSS_CLICK, interval=5):
-                    find_btn_clicked = False
-                    continue
-                if self.best_demon_enable:
-                    self.device.click_record_clear()
-                    if self.appear(self.I_DE_BOSS_BEST) and (not find_btn_clicked):
-                        self.device.click_record_remove(self.I_DE_BOSS_BEST)
-                        if self.click(self.I_DE_BOSS_BEST, interval=4):
-                            logger.info("Finding best boss...")
-                            find_btn_clicked = True
+            # 挂 PAUSE 长等待标记: find_boss 循环可能超过设备层 60s 普通卡死保护。
+            # 8-02 实测: 首领按钮 ROI 偏移 2px 且 ROI=模板尺寸无滑动余地, 匹配 0.46
+            # 识别不到 -> 永不点击 -> 60s 空集卡死 GameStuckError 重启 (老区号/小号6)。
+            # 挂 PAUSE(stuck_long_wait_list 内)后保护放宽到 300s, 由内置 10 分钟
+            # 超时优雅兜底(set_next_run + TaskEnd), 不再被 60s 卡死保护打爆。
+            self.device.stuck_record_clear()
+            self.device.stuck_record_add('PAUSE')
+            try:
+                while 1:
+                    self.screenshot()
+                    if self.appear(self.I_BOSS_FIRE) or self.appear(self.I_BEST_BOSS_FIRE):
+                        break
+                    if timer_find_boss.reached():
+                        logger.warning('find boss timeout')
+                        self.set_next_run(task='DemonEncounter', success=False, finish=True, server=False)
+                        raise TaskEnd('DemonEncounter')
+                    if self.appear(self.I_JADE_50):
+                        # 没找到boss但地图中央出现宝箱，导致点击宝箱出现50勾玉购买界面
+                        self.ui_click_until_smt_disappear(self.I_DE_FIND, self.I_JADE_50, interval=1)
                         continue
-                else:
-                    if self.appear(self.I_DE_BOSS) and (not find_btn_clicked):
-                        self.device.click_record_remove(self.I_DE_BOSS)
-                        if self.click(self.I_DE_BOSS, interval=4):
-                            logger.info("Finding normal boss...")
-                            find_btn_clicked = True
+                    if find_btn_clicked and self.click(self.C_DM_BOSS_CLICK, interval=5):
+                        find_btn_clicked = False
                         continue
-            return True
+                    if self.best_demon_enable:
+                        self.device.click_record_clear()
+                        if self.appear(self.I_DE_BOSS_BEST) and (not find_btn_clicked):
+                            self.device.click_record_remove(self.I_DE_BOSS_BEST)
+                            if self.click(self.I_DE_BOSS_BEST, interval=4):
+                                logger.info("Finding best boss...")
+                                find_btn_clicked = True
+                            continue
+                    else:
+                        if self.appear(self.I_DE_BOSS) and (not find_btn_clicked):
+                            self.device.click_record_remove(self.I_DE_BOSS)
+                            if self.click(self.I_DE_BOSS, interval=4):
+                                logger.info("Finding normal boss...")
+                                find_btn_clicked = True
+                            continue
+                return True
+            finally:
+                self.device.stuck_record_clear()
 
         def enter_boss():
             logger.info('trying to enter boss...')
@@ -411,6 +421,13 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
             time.sleep(0.5)
 
     def _battle(self, target_click):
+        # 点击上限保护: 连续点击 N 次仍未进入战斗则放弃该灯笼, 防止死循环触发
+        # 60s 卡死/TooManyClick 重启。8-02 实测: LETTER 灯笼匹配 0.767<0.8 阈值被
+        # check_lantern 排除法误判为 BATTLE, _battle 连点 10 次 de_3 无反应 ->
+        # GameTooManyClickError 重启 (小号2/3/5/6)。正常战斗灯笼 1-2 次点击即进入
+        # 战斗(I_DE_LOCATION 消失), 6 次上限正常流程永远碰不到。
+        click_count = 0
+        click_limit = 6
         while 1:
             self.screenshot()
             if not self.appear(self.I_DE_LOCATION):
@@ -427,7 +444,11 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
                         continue
                 break
 
+            if click_count >= click_limit:
+                logger.warning(f'Click lantern {click_limit} times no battle start, skip this lantern')
+                return
             if self.click(target_click, interval=1):
+                click_count += 1
                 continue
         self.current_count = 0
         if self.run_general_battle():
@@ -435,6 +456,9 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
 
     def _realm(self, target_click):
         # 结界
+        # 与 _battle 相同的点击上限保护(防御): 灯笼类型误判时防死循环触发卡死重启
+        click_count = 0
+        click_limit = 6
         while 1:
             self.screenshot()
             if not self.appear(self.I_DE_LOCATION):
@@ -443,7 +467,11 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
             if self.appear_then_click(self.I_DE_REALM_FIRE, interval=0.7):
                 continue
 
+            if click_count >= click_limit:
+                logger.warning(f'Click lantern {click_limit} times no realm start, skip this lantern')
+                return
             if self.click(target_click, interval=1):
+                click_count += 1
                 continue
         self.current_count = 0
         if self.run_general_battle():

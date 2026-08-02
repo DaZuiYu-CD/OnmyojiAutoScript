@@ -76,9 +76,15 @@ class DemonEncounterAssets:
 	# 点击右下角的寻找封魔 
 	I_DE_FIND = RuleImage(roi_front=(1136,593,100,100), roi_back=(1136,593,100,100), threshold=0.8, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_find.png")
 	# 点击首领 
-	I_DE_BOSS = RuleImage(roi_front=(1001,645,45,45), roi_back=(1001,645,45,45), threshold=0.8, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_boss.png")
+	# 8-02 修复: roi 从 (1001,645,45,45) 扩到 (985,630,80,80), 留滑动余地。
+	# 原因: 原 roi 尺寸=模板 45x45 无滑动余地, 游戏 UI 2px 微调后按钮实际渲染
+	# 位置 (999,644) 与 roi 偏移, 匹配度从 0.89 崩到 0.46 -> find_boss 识别不到
+	# 首领按钮 -> 永不点击 -> 60s 空集卡死重启 (老区号/小号6 8-02 实测)。
+	# 扩大后实测匹配回到 0.89, 且按钮小幅偏移时仍能匹配。
+	I_DE_BOSS = RuleImage(roi_front=(985,630,80,80), roi_back=(985,630,80,80), threshold=0.8, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_boss.png")
 	# 点击封魔极 
-	I_DE_BOSS_BEST = RuleImage(roi_front=(900,644,45,50), roi_back=(900,644,45,50), threshold=0.8, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_boss_best.png")
+	# 8-02 防御性修复: 与 I_DE_BOSS 相同问题(roi=模板尺寸无滑动余地), 一并扩大留滑动余地
+	I_DE_BOSS_BEST = RuleImage(roi_front=(880,620,90,100), roi_back=(880,620,90,100), threshold=0.8, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_boss_best.png")
 	# 式神录 
 	I_DE_SHI_RECORDS = RuleImage(roi_front=(789,639,48,48), roi_back=(789,639,48,48), threshold=0.8, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_shi_records.png")
 	# 左下角小指针 
@@ -109,7 +115,11 @@ class DemonEncounterAssets:
 	# 已领取四次的奖励 
 	I_DE_AWARD = RuleImage(roi_front=(1216,214,42,36), roi_back=(1195,198,74,67), threshold=0.8, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_award.png")
 	# 信 
-	I_DE_LETTER = RuleImage(roi_front=(1236,358,33,35), roi_back=(1177,261,100,294), threshold=0.8, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_letter.png")
+	# 8-02 修复: threshold 0.8 -> 0.75。原因: LETTER 灯笼图标今天匹配度实测 0.767
+	# (8-02 小号2 灯笼3), 0.8 阈值识别不出 -> check_lantern 排除法误判 BATTLE ->
+	# _battle 死循环点灯笼 -> TooManyClick 重启。0.75 余量 0.017, 灯笼区域为图标
+	# 本体, 无其他图标干扰, 误判风险低。
+	I_DE_LETTER = RuleImage(roi_front=(1236,358,33,35), roi_back=(1177,261,100,294), threshold=0.75, method="Template matching", file="./tasks/DemonEncounter/demon/demon_de_letter.png")
 	# 关闭封魔密信 
 	I_LETTER_CLOSE = RuleImage(roi_front=(851,43,45,45), roi_back=(851,43,45,45), threshold=0.8, method="Template matching", file="./tasks/DemonEncounter/demon/demon_letter_close.png")
 	# 小鬼王的挑战 
