@@ -21,6 +21,7 @@ import tasks.Exploration.page as pages
 from module.logger import logger
 from module.exception import TaskEnd, GameStuckError
 from module.atom.animate import RuleAnimate
+from module.base.timer import Timer
 from typing import Optional
 
 
@@ -301,9 +302,22 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
         这里之所以违反页面特性使用循环, 是因为由于怪物移动的原因可能导致一次点击会无法进入战斗,
         回到外循环之后由于UP旋转的特性可能导致识别不到怪物然后开始滑动, 导致错过的怪物更多
         因此这里使用贪心的思想, 只要识别到怪物一次就尽最大可能直接进入战斗, 保证尽可能有怪则打
+
+        卡死防护(8-03 主号三次 Wait too long 后拉闸):
+        原循环里 appear_then_click 匹配失败时不递减 max_tries, 一旦点击落空后界面卡在
+        "非探索主界面非战斗页"的中间态(页面/按钮识别全部失败), 循环无限空转,
+        期间无点击无识别进展, 60s 空集卡死保护触发重启, 失败3次 exit(1)。
+        修复: ① 15s 整体超时兜底(远超正常进战斗耗时, 实测约5s) ② 确认在探索主界面
+        但连续找不到战斗按钮(该位置没怪了)则提前返回 False, 让外层滑动换位置继续找。
         """
         max_tries = 4
+        timer_fire = Timer(15)
+        timer_fire.start()
+        exp_main_miss = 0
         while max_tries > 0:
+            if timer_fire.reached():
+                logger.warning('Fire monster timeout after 15s, return to exp main and retry')
+                return False
             self.screenshot()
             cur_page = self.get_current_page()
             # 退出动画期间可能再次识别到怪物开始攻击, 因此取消退出
@@ -314,7 +328,16 @@ class BaseExploration(GameUi, GeneralBattle, GeneralRoom, GeneralInvite, Replace
                 return True
             if self.appear_then_click(button, interval=0.8):
                 max_tries -= 1
+                exp_main_miss = 0
                 continue
+            # 按钮识别失败: 仅当明确在探索主界面(能识别到页面)但找不到按钮才计数,
+            # 说明这个位置的怪已消失/被抢, 3 轮(约2-3s)后返回 False 让外层滑动换位置;
+            # 过渡态(页面识别为 None)不计数, 由上面 15s 整体超时兜底, 避免误判正常进战斗流程
+            if cur_page == pages.page_exp_main:
+                exp_main_miss += 1
+                if exp_main_miss >= 3:
+                    logger.warning(f'No fire button on exp main for {exp_main_miss} rounds, return and swipe')
+                    return False
         return False
 
     def switch_rotate(self) -> bool:
