@@ -20,6 +20,9 @@ class RaidConfig(BaseModel):
     ryou_access: bool = Field(default=False, description='ryou_access_help')
     # 正式进攻会设定 2s - 10s 的随机延迟，避免攻击间隔及其相近被检测为脚本。
     random_delay: bool = Field(default=False, description='random_delay_help')
+    # 次数不足(没票)时, 多少小时后自动再来(寮突破次数1小时恢复1次, 默认1小时重试)
+    no_ticket_retry_hours: float = Field(default=1.0, ge=0.5, le=24,
+                                         description='no_ticket_retry_hours_help')
 
     # 打完没票了 0/6 => 失败
     # 突破压根没开  +> 失败

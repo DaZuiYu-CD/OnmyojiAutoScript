@@ -155,31 +155,43 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
         # --------------------------------------------------------------------------------------------------------------
         area_index = 0
         success = True
-        while 1:
-            # 设置长任务标志,用来寻找寮突可进攻的目标
-            self.device.stuck_record_add('PREPARE_BEFORE_BATTLE')
-            if not self.has_ticket():
-                logger.info("We have no chance to attack. Try again after 1 hour.")
-                success = False
-                break
-            if self.current_count >= ryou_config.raid_config.limit_count:
-                logger.warning("We have attacked the limit count.")
-                break
-            if datetime.now() >= self.start_time + time_delta:
-                logger.warning("We have attacked the limit time.")
-                break
-            # 进攻
-            res = self.attack_area(area_index)
-            # 如果战斗失败或区域不可用，则弹出当前区域索引，开始进攻下一个
-            if not res:
-                area_index += 1
-                if area_index >= len(area_map):
-                    logger.warning('All areas are not available, it will flush the area cache')
-                    area_index = 0
-                    self.flush_area_cache()
-                continue
+        retry_in_hours = None  # 次数不足时记录重试间隔(小时), 非 None 表示按此时间重排
+        try:
+            while 1:
+                # 设置长任务标志,用来寻找寮突可进攻的目标
+                self.device.stuck_record_add('PREPARE_BEFORE_BATTLE')
+                if not self.has_ticket():
+                    # 次数不足(0/6): 按 no_ticket_retry_hours 配置的小时数自动重来(默认1小时),
+                    # 不再按 failure_interval(默认1天) 等到明天
+                    # 注意: 21:00-次日5:00 has_ticket 恒为 True, 次数不足只发生在 5:00-21:00
+                    retry_in_hours = ryou_config.raid_config.no_ticket_retry_hours
+                    logger.info(f'No ticket, retry after {retry_in_hours} hour(s)')
+                    break
+                if self.current_count >= ryou_config.raid_config.limit_count:
+                    logger.warning("We have attacked the limit count.")
+                    break
+                if datetime.now() >= self.start_time + time_delta:
+                    logger.warning("We have attacked the limit time.")
+                    break
+                # 进攻
+                res = self.attack_area(area_index)
+                # 如果战斗失败或区域不可用，则弹出当前区域索引，开始进攻下一个
+                if not res:
+                    area_index += 1
+                    if area_index >= len(area_map):
+                        logger.warning('All areas are not available, it will flush the area cache')
+                        area_index = 0
+                        self.flush_area_cache()
+                    continue
+        finally:
+            # 清除长任务标志, 防止残留到下一个任务(误享 300s 长等待保护)
+            self.device.stuck_record_clear()
 
-        if success:
+        if retry_in_hours is not None:
+            # 次数不足: target=现在+N小时, task_delay 与 success/failure_interval 取最近, N小时必然生效
+            self.set_next_run(task='RyouToppa', finish=True, server=True,
+                              target=datetime.now() + timedelta(hours=retry_in_hours))
+        elif success:
             self.set_next_run(task='RyouToppa', finish=True, server=True, success=True)
         else:
             self.set_next_run(task='RyouToppa', finish=True, server=True, success=False)
