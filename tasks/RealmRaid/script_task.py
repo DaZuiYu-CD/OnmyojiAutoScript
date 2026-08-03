@@ -5,7 +5,7 @@ import time
 import re
 from cached_property import cached_property
 from module.base.timer import Timer
-from tasks.GameUi.default_pages import page_exploration
+from tasks.GameUi.default_pages import page_exploration, random_click
 
 from tasks.base_task import BaseTask
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
