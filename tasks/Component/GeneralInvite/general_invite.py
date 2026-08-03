@@ -668,7 +668,13 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
 
     def appear_accept(self) -> bool:
         """出现邀请标志"""
-        return self.appear(self.I_I_ACCEPT) or self.appear(self.I_I_ACCEPT_APPRENTICE)
+        # 注意: 必须与 check_then_accept 点击逻辑里的按钮集合一致(ACCEPT/ACCEPT_DEFAULT/APPRENTICE)。
+        # 曾漏掉 I_I_ACCEPT_DEFAULT(默认接受按钮): 当邀请弹窗以"默认接受"形态出现时,
+        # 该按钮是唯一可识别的入口, 入口判定返回 False 导致整个接受流程被跳过,
+        # 表现为"队员模式不自动接受邀请"(InfiniteBattle 队员模式实测场景)。
+        return (self.appear(self.I_I_ACCEPT)
+                or self.appear(self.I_I_ACCEPT_DEFAULT)
+                or self.appear(self.I_I_ACCEPT_APPRENTICE))
 
     def wait_battle(self, wait_time: time) -> bool:
         """
