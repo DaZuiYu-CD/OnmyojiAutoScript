@@ -14,7 +14,7 @@ class ConfigManual:
         > Dokan > AbyssShadows > Hunt > GuildBanquet > DemonRetreat > GuildActivityMonitor
         > Orochi > OrochiMoans > OrochiJudgement > Sougenbi > FallenSun > EternitySea > SixRealms > OtherWorldTwilight
         > ActivityShikigami > WantedQuests
-        > BondlingFairyland > EvoZone > GoryouRealm > HeroTest > InfiniteBattle
+        > BondlingFairyland > EvoZone > GoryouRealm > HeroTest > InfiniteBattle > FindJade
         > CollectiveMissions
         > Pets > TalismanPass > Delegation > Hyakkiyakou
         > Secret > WeeklyTrifles > MysteryShop > Duel 
