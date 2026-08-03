@@ -400,14 +400,16 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
         # 由于更改识别顺序，退出战斗之后，需要先等待回到个人突破界面，即识别到红色退出按钮，再进行奖励判断
         # 多轮重试: 结算页Lose后可能停在结算残影/半透明过渡态, I_BACK_RED迟迟不出现
         # (8-02实测: 第12场Lose后 09:07:54 -> 09:08:51 Wait too long, 60s空集卡死重启)
-        # 每轮先随机点击推进结算页过渡, 再等返回键; 多轮(3x6s≈20s, 低于60s卡死保护)
+        # 顺序注意: 必须先等待再点击。正常流程(已回到突破界面)下 wait_until_appear
+        # 立即命中 -> 零多余点击, 与原版行为一致; 只有等不到返回键(卡在结算过渡态)
+        # 才随机点击推进页面过渡。多轮(3x6s+2次点击≈20s, 低于60s卡死保护)
         # 仍检测不到才导航回突破界面自救, 避免无限等待触发卡死保护
         back_waited = False
         for _ in range(3):
-            self.click(random_click(), interval=0.8)
             if self.wait_until_appear(self.I_BACK_RED, wait_time=6):
                 back_waited = True
                 break
+            self.click(random_click(), interval=0.8)
         if not back_waited:
             logger.warning('Back to realm raid after battle timeout, goto realm raid to recover')
             self.goto_page(page_realm_raid)
