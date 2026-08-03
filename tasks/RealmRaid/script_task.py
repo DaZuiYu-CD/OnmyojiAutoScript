@@ -159,6 +159,17 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
             if not last_battle and con.raid_config.when_attack_fail == WhenAttackFail.EXIT:
                 logger.info('Battle lost and exit')
                 break
+            # 降级 >> 独立开关: 战斗失败(非退4的"退")后, 找一个人反复快速退出
+            # downgrade_count 次降低突破等级, 再刷新列表让后续对手更弱
+            # 注意: 退4分支(exit_four)的快速退出不写入 last_battle, 不会误触发;
+            # 仅真实战斗失败(last_battle=False)才进入, 与上面 REFRESH/EXIT 分支互不影响
+            if not last_battle and con.raid_config.downgrade_enable:
+                logger.info('Battle lost and downgrade')
+                if self._downgrade(con):
+                    continue
+                else:
+                    success = False
+                    break
 
         self.goto_page(page_exploration)
         self.set_next_run(task='RealmRaid', success=success, finish=True)
@@ -569,6 +580,50 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
             if self.appear_then_click(self.I_FIRE_AGAIN, interval=2):
                 continue
         return False
+
+    def _downgrade(self, con: RealmRaid) -> bool:
+        """
+        降级: 战斗失败后, 找一个目标反复"快速退出" downgrade_count 次, 降低突破等级,
+        然后刷新列表, 让后续对手更弱。完全复用退4(exit_four)的快速退出机制:
+        build_quick_exit_config + fire_again, 纯新增方法不影响任何现有逻辑。
+
+        流程:
+          1. find_one 找一个可打目标
+          2. fire(index) 进入该目标战斗
+          3. 循环 downgrade_count-1 次: run_general_battle(quick_exit) 快速退出(判负)
+             + fire_again 失败界面再战, 回到准备页
+          4. 最后一次 run_general_battle(quick_exit) 快速退出(判负), 停在失败界面
+          5. reward_detect_click 等返回键回到突破界面(自带多轮点击推进+导航自救)
+          6. refresh_with_cd_wait 刷新列表(带 CD 等待), 刷新成功返回 True
+
+        :param con: RealmRaid 配置对象
+        :return: True=降级+刷新成功, False=失败(主循环将结束任务)
+        """
+        # 1. 找目标(复用主循环同款 find_one, 找当前列表第一个可打的)
+        medal, index = self.find_one(False)
+        if not medal or not index:
+            logger.warning('Downgrade: no target found, skip')
+            return False
+        # 2. 进入该目标战斗(消耗1张突破票)
+        if not self.fire(index):
+            logger.warning('Downgrade: fail to enter battle, skip')
+            return False
+        # 3+4. 反复快速退出 downgrade_count 次 (前 N-1 次退完再战, 最后一次退完停失败界面)
+        for _ in range(con.raid_config.downgrade_count - 1):
+            self.run_general_battle(config=self.build_quick_exit_config(con.general_battle_config))
+            self.fire_again()
+        self.run_general_battle(config=self.build_quick_exit_config(con.general_battle_config))
+        logger.info(f'Downgrade done, total quick-exit {con.raid_config.downgrade_count} times')
+        # 5. 从失败界面回到突破界面(复用结算返回逻辑, 自带超时+导航自救)
+        if not self.reward_detect_click(False):
+            logger.warning('Downgrade: fail to back to realm raid, skip')
+            return False
+        # 6. 刷新列表继续打
+        self.screenshot()
+        if not self.refresh_with_cd_wait(max_tries=2):
+            logger.warning('Downgrade: fail to refresh list, skip')
+            return False
+        return True
 
     @cached_property
     def false_roi(self) -> list:

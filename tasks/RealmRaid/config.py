@@ -25,6 +25,11 @@ class RaidConfig(BaseModel):
     order_attack: str = Field(title='Order Attack', default='5 > 4 > 3 > 2 > 1 > 0', description='order_attack_help')
     three_refresh: bool = Field(title='Three Refresh', default=False, description='three_refresh_help')
     when_attack_fail: WhenAttackFail = Field(title='WhenAttackFail', default=WhenAttackFail.REFRESH, description='when_attack_fail_help')
+    # 降级开关: 战斗失败(非退4的"退")后, 找一个人反复快速退出 downgrade_count 次,
+    # 降低突破等级后刷新列表, 让后续对手更弱。默认关闭, 不影响原逻辑
+    downgrade_enable: bool = Field(title='Downgrade Enable', default=False, description='downgrade_enable_help')
+    # 降级次数: 反复退出的次数(默认9次, 每次消耗1张突破票)
+    downgrade_count: int = Field(title='Downgrade Count', default=9, le=20, ge=1, description='downgrade_count_help')
 
 class RealmRaid(ConfigBase):
     scheduler: Scheduler = Field(default_factory=Scheduler)
