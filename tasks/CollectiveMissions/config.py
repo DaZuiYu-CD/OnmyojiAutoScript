@@ -23,6 +23,7 @@ class MC(str, Enum):
     SO1 = '御魂一'
     SO2 = '御魂二'
     FEED = '养成'  # 喂N卡
+    ONLY_REWARD = '只领奖励'  # 只领取已完成任务的奖励, 不做任何捐献/喂养操作
 
 
 class MissionsConfig(BaseModel):

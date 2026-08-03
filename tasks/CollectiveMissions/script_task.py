@@ -32,6 +32,12 @@ class ScriptTask(GameUi, CollectiveMissionsAssets):
         self.goto_page(page_collective_missions)
         logger.info('Start to detect missions')
         self.get_task_reward()
+        if self.config.collective_missions.missions_config.missions_select == MC.ONLY_REWARD:
+            # 只领奖励模式: 领取所有已完成任务的奖励后直接结束, 不做任何捐献/喂养
+            logger.info('Only get reward mode, skip all missions')
+            self.goto_page(page_main)
+            self.set_next_run(task='CollectiveMissions', success=True)
+            raise TaskEnd
         if self.is_finish():
             self.goto_page(page_main)
             self.set_next_run(task='CollectiveMissions', success=True)
