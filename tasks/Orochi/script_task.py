@@ -4,6 +4,7 @@
 import random
 from time import sleep
 from datetime import time, datetime, timedelta
+from typing import Callable
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 
 from tasks.Component.GeneralBattle.general_battle import BattleAction, GeneralBattle, ExitMatcher, BattleContext
@@ -106,7 +107,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             return True
         return False
 
-    def run_leader(self):
+    def run_leader(self, confirm_fire: Callable[[], bool] = None):
+        """
+        队长开房组队刷御魂。
+        :param confirm_fire: 可选"开战前确认"回调(8-04 Guild30Team 联动用), 透传给
+            run_invite: 房间满员但回调返回 False 时不点挑战, 防止路人占位/搭档未入队就开打。
+            默认 None 不影响任何现有调用。
+        """
         logger.info('Start run leader')
         self.goto_page(page_orochi)
         layer = self.config.orochi.orochi_config.layer
@@ -149,7 +156,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 continue
             # 点击挑战
             if not is_first:
-                if self.run_invite(config=self.config.orochi.invite_config):
+                if self.run_invite(config=self.config.orochi.invite_config, confirm_fire=confirm_fire):
                     self.run_general_battle(
                         config=self.config.orochi.general_battle_config,
                         battle_key=self._orochi_battle_key()
@@ -161,7 +168,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                     break
             # 第一次会邀请队友
             if is_first:
-                if not self.run_invite(config=self.config.orochi.invite_config, is_first=True):
+                if not self.run_invite(config=self.config.orochi.invite_config, is_first=True,
+                                       confirm_fire=confirm_fire):
                     logger.warning('Invite failed and exit this orochi task')
                     success = False
                     break
@@ -183,7 +191,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             return False
         return True
 
-    def run_member(self):
+    def run_member(self, on_in_room: Callable[[], None] = None):
+        """
+        队员入队组队刷御魂。
+        :param on_in_room: 可选"已在房间"回调(8-04 Guild30Team 联动用), 每次检测到自己在
+            房间时调用(用于刷新 joined 入队回报, 供队长开战前确认)。默认 None 不影响现有调用。
+        """
         logger.info('Start run member')
         # 进入战斗流程
         self.device.stuck_record_add('BATTLE_STATUS_S')
@@ -204,6 +217,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 continue
 
             if self.is_in_room(False):
+                if on_in_room is not None:
+                    on_in_room()  # 8-04: 回报"搭档已在房间"供队长确认
                 self.device.stuck_record_clear()
                 if self.wait_battle(wait_time=self.config.orochi.invite_config.wait_time):
                     self.run_general_battle(

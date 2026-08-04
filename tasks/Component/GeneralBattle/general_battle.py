@@ -1096,22 +1096,37 @@ class GeneralBattle(GeneralBuff, GeneralBattleAssets):
         Returns:
             None: 直接执行锁定状态切换。
         """
+        # 8-04 修复: 两个 while 1 原本无任何超时, 若 lock/unlock 图像识别不到
+        # (页面过渡中/模板失配) 会空转直到 60s 设备层卡死保护触发重启游戏
+        # (实测: 主号陪1 组队觉醒点拾层后 Unlock team 空转 60s -> GameStuckError 重启)。
+        # 加 15s 超时: 正常路径 1-2 次点击即 break, 行为不变; 识别不到时优雅跳过,
+        # 锁队只是"防止换人"的辅助状态, 跳过不影响组队刷本主流程。
         if enable:
             logger.info("Lock team")
+            ensure_timer = Timer(15)
+            ensure_timer.start()
             while 1:
                 self.screenshot()
                 if self.appear(lock_image):
                     break
                 if self.appear_then_click(unlock_image, interval=1):
                     continue
+                if ensure_timer.reached():
+                    logger.warning('Lock team timeout after 15s, give up lock')
+                    break
         else:
             logger.info("Unlock team")
+            ensure_timer = Timer(15)
+            ensure_timer.start()
             while 1:
                 self.screenshot()
                 if self.appear(unlock_image):
                     break
                 if self.appear_then_click(lock_image, interval=1):
                     continue
+                if ensure_timer.reached():
+                    logger.warning('Unlock team timeout after 15s, give up unlock')
+                    break
 
     def check_and_open_buff(self, buff: Union[BuffClass | list[BuffClass]] = None):
         """

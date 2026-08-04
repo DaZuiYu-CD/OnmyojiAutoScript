@@ -269,9 +269,15 @@ async def task_group_copy(task_name: str, group_name: str, dest_config_name: str
 # ---------------------------------   脚本实例管理   ----------------------------------
 @script_app.get('/{script_name}/start')
 async def script_start(script_name: str):
+    # 8-04 修复: ScriptProcess.start() 是 async 方法, 原代码未 await, 协程被直接丢弃,
+    # 子进程从未真正启动 (Guild30Team 联动"自动拉起小号"因此失效, _start_partner 假成功)。
+    # 与 main_manager.restart_processes 的 await 调用保持一致。
     if script_name not in mm.script_process:
-        mm.script_process[script_name] = ScriptProcess(script_name)
-    mm.script_process[script_name].start()
+        try:
+            mm.script_process[script_name] = ScriptProcess(script_name)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail=f'Config not found: {script_name}')
+    await mm.script_process[script_name].start()
     return
 
 @script_app.get('/{script_name}/stop')
@@ -279,8 +285,15 @@ async def script_stop(script_name: str):
     if script_name not in mm.script_process:
         logger.warning(f'[{script_name}] script process does not exist')
         return
-    mm.script_process[script_name].stop()
+    await mm.script_process[script_name].stop()
     return
+
+# 查询脚本进程是否在运行 (供 Guild30Team 联动任务判断搭档账号是否已启动)
+@script_app.get('/{script_name}/process_state')
+async def script_process_state(script_name: str):
+    if script_name not in mm.script_process:
+        return {'running': False}
+    return {'running': mm.script_process[script_name].state != ScriptState.INACTIVE}
 
 @script_app.get('/{script_name}/{task}/args')
 async def script_task(script_name: str, task: str):

@@ -54,6 +54,7 @@ from tasks.AbyssShadows.config import AbyssShadows
 from tasks.GuildBanquet.config import GuildBanquet
 from tasks.DemonRetreat.config import DemonRetreat
 from tasks.GuildActivityMonitor.config import GuildActivityMonitor
+from tasks.Guild30Team.config import Guild30Team
 
 # 这一部分是活动的配置-----------------------------------------------------------------------------------------------------
 from tasks.ActivityShikigami.config import ActivityShikigami
@@ -150,6 +151,9 @@ class ConfigModel(ConfigBase):
 
     # 阴阳寮
     collective_missions: CollectiveMissions = Field(default_factory=CollectiveMissions)
+    # 注意: 字段名必须是 guild_3_0_team (不是 guild30_team) —— convert_to_underscore('Guild30Team')
+    # 会把数字拆开生成 guild_3_0_team, 字段名与之保持一致才能被 set_next_run/前端参数读取正确解析
+    guild_3_0_team: Guild30Team = Field(default_factory=Guild30Team)
     hunt: Hunt = Field(default_factory=Hunt)
     dokan: Dokan = Field(default_factory=Dokan)
     abyss_shadows: AbyssShadows = Field(default_factory=AbyssShadows)

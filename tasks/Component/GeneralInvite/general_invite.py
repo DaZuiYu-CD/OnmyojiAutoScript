@@ -5,6 +5,7 @@ from time import sleep
 import numpy as np
 
 from enum import Enum
+from typing import Callable
 from cached_property import cached_property
 from datetime import timedelta, time
 from module.atom.image import RuleImage
@@ -43,13 +44,18 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
     timer_wait = None
     timer_emoji = None  # 等待期间如果没有操作的话，可能会导致长时间无响应报错
 
-    def run_invite(self, config: InviteConfig, is_first: bool = False) -> bool:
+    def run_invite(self, config: InviteConfig, is_first: bool = False,
+                   confirm_fire: Callable[[], bool] = None) -> bool:
         """
         队长！！身份。。。在组队界面邀请好友（ 如果开启is_first） 等待队员进入开启挑战
         请注意，返回的时候成功时是进入战斗了！！！
         如果是失败，那就是没有队友进入，然后会退出房间的界面
         :param config:
         :param is_first: 如果是第一次开房间的那就要邀请队员，其他情况等待队员进入
+        :param confirm_fire: 可选"开战前确认"回调(8-04 Guild30Team 联动用)。
+            房间空位已满(room_check_can_fire 判定人齐)但此回调返回 False 时**不点击挑战**,
+            继续等待/重新邀请 —— 用于确认进来的是搭档而不是路人占位。
+            默认 None 不改变任何现有任务行为。
         :return:
         """
         if not self.ensure_enter():
@@ -88,6 +94,11 @@ class GeneralInvite(BaseTask, GeneralInviteAssets):
 
             # 点击挑战
             if self.room_check_can_fire(config):
+                if confirm_fire is not None and not confirm_fire():
+                    # 空位已满但搭档确认未通过(可能是路人占位): 不点挑战, 继续等待/重新邀请
+                    logger.info('Room full but partner confirm not passed, keep waiting')
+                    sleep(2)
+                    continue
                 self.click_fire()
                 return True
             if self.timer_invite and self.timer_invite.reached():

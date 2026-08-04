@@ -3,6 +3,7 @@
 # github https://github.com/runhey
 from time import sleep
 from datetime import time, datetime, timedelta
+from typing import Callable
 from tasks.Component.GeneralBattle.config_general_battle import GeneralBattleConfig
 
 from tasks.Component.GeneralBattle.general_battle import GeneralBattle, ExitMatcher, BattleContext, BattleAction
@@ -16,6 +17,7 @@ from tasks.GameUi.matcher import any_of
 from tasks.GameUi.page import page_main, page_awake_zones, page_shikigami_records
 from tasks.EvoZone.assets import EvoZoneAssets
 from tasks.EvoZone.config import EvoZone, UserStatus, KirinType
+from module.base.timer import Timer
 from module.logger import logger
 from module.exception import TaskEnd
 
@@ -115,24 +117,40 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             return True
         return False
 
-    def run_leader(self):
+    def run_leader(self, confirm_fire: Callable[[], bool] = None):
+        """
+        队长开房组队刷觉醒。
+        :param confirm_fire: 可选"开战前确认"回调(8-04 Guild30Team 联动用), 透传给
+            run_invite: 房间满员但回调返回 False 时不点挑战, 防止路人占位/搭档未入队就开打。
+            默认 None 不影响任何现有调用。
+        """
         logger.info('Start run leader')
         self.goto_page(page_awake_zones)
         self.evozone_enter()
         layer = self.config.evo_zone.evo_zone_config.layer
         logger.info("test0")
         self.check_layer(layer)
-        logger.info("test1")
-        self.check_lock(self.config.evo_zone.general_battle_config.lock_team_enable, self.I_EVOZONE_LOCK, self.I_EVOZONE_UNLOCK)
-        logger.info("test2")
-        # 创建队伍
+        # 创建队伍(进入准备页)
         logger.info('Create team')
+        create_timer = Timer(10)  # 8-04: 原无超时, 组队按钮点击后准备页识别不到会空转卡死
+        create_timer.start()
         while 1:
             self.screenshot()
             if self.appear(self.I_CHECK_TEAM):
                 break
             if self.appear_then_click(self.I_FORM_TEAM, interval=1):
                 continue
+            if create_timer.reached():
+                logger.warning('Create team timeout after 10s, exit evozone leader')
+                return False
+        # 8-04 修复: check_lock 必须在进入准备页(创建队伍)之后执行。
+        # 实测(主号陪1 16:33): 点击层数 tab 后页面仍停留在麒麟选层界面
+        # (I_FORM_TEAM 组队按钮模板匹配 0.99, 锁队按钮仅 0.22/0.26, I_CHECK_TEAM 0.15),
+        # 锁队按钮在准备页才存在; 原顺序 check_layer->check_lock 在选层界面识别锁队图
+        # 必然失败, 配合 check_lock 无超时 while 1 空转 60s 触发卡死保护重启游戏。
+        logger.info("test1")
+        self.check_lock(self.config.evo_zone.general_battle_config.lock_team_enable, self.I_EVOZONE_LOCK, self.I_EVOZONE_UNLOCK)
+        logger.info("test2")
         # 创建房间
         self.create_room()
         self.ensure_private()
@@ -165,7 +183,7 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                 continue
             # 点击挑战
             if not is_first:
-                if self.run_invite(config=self.config.evo_zone.invite_config):
+                if self.run_invite(config=self.config.evo_zone.invite_config, confirm_fire=confirm_fire):
                     self.run_general_battle(
                         config=self.config.evo_zone.general_battle_config,
                         exit_matcher=self.I_CHECK_TEAM,
@@ -177,7 +195,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
                     break
             # 第一次会邀请队友
             if is_first:
-                if not self.run_invite(config=self.config.evo_zone.invite_config, is_first=True):
+                if not self.run_invite(config=self.config.evo_zone.invite_config, is_first=True,
+                                       confirm_fire=confirm_fire):
                     logger.warning('Invite failed and exit this evozone task')
                     success = False
                     break
@@ -199,7 +218,12 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             return False
         return True
 
-    def run_member(self):
+    def run_member(self, on_in_room: Callable[[], None] = None):
+        """
+        队员入队组队刷觉醒。
+        :param on_in_room: 可选"已在房间"回调(8-04 Guild30Team 联动用), 每次检测到自己在
+            房间时调用(用于刷新 joined 入队回报, 供队长开战前确认)。默认 None 不影响现有调用。
+        """
         logger.info('Start run member')
         # 进入战斗流程
         self.device.stuck_record_add('BATTLE_STATUS_S')
@@ -214,6 +238,8 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralBuff, GeneralRoom, GameUi,
             if self.check_then_accept():
                 continue
             if self.is_in_room(False):
+                if on_in_room is not None:
+                    on_in_room()  # 8-04: 回报"搭档已在房间"供队长确认
                 self.device.stuck_record_clear()
                 if self.wait_battle(wait_time=self.config.evo_zone.invite_config.wait_time):
                     self.run_general_battle(
