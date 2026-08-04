@@ -168,7 +168,10 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
                 if self._downgrade(con):
                     continue
                 else:
-                    success = False
+                    # 降级失败只结束本轮, 不标记任务失败(8-04修复: 降级收尾"没领到三胜奖励"
+                    # 曾被误判为"回界面失败"→ success=False 把 next_run 推到明天, 刷新区块
+                    # 根本没执行; 与上方 EXIT 分支(159行)同款处理——降级/战斗收尾问题不应背
+                    # "任务失败"惩罚, 下次按正常调度重跑)
                     break
 
         self.goto_page(page_exploration)
@@ -593,11 +596,14 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
           3. 循环 downgrade_count-1 次: run_general_battle(quick_exit) 快速退出(判负)
              + fire_again 失败界面再战, 回到准备页
           4. 最后一次 run_general_battle(quick_exit) 快速退出(判负), 停在失败界面
-          5. reward_detect_click 等返回键回到突破界面(自带多轮点击推进+导航自救)
+          5. 尝试回突破界面: 复用 reward_detect_click 的返回键等待+点击推进+导航自救,
+             但不依赖其返回值(语义是"是否领到三胜奖励", 与"是否回到界面"无关),
+             随后自己截图确认 I_BACK_RED, 不在则 goto_page 兜底
           6. refresh_with_cd_wait 刷新列表(带 CD 等待), 刷新成功返回 True
 
         :param con: RealmRaid 配置对象
-        :return: True=降级+刷新成功, False=失败(主循环将结束任务)
+        :return: True=降级+刷新成功, False=仅"刷新列表失败"才返回(回界面问题已被
+                 第5步兜底吸收, 不再因领奖/回界面问题整体判失败)
         """
         # 1. 找目标(复用主循环同款 find_one, 找当前列表第一个可打的)
         medal, index = self.find_one(False)
@@ -614,11 +620,20 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RealmRaidAssets):
             self.fire_again()
         self.run_general_battle(config=self.build_quick_exit_config(con.general_battle_config))
         logger.info(f'Downgrade done, total quick-exit {con.raid_config.downgrade_count} times')
-        # 5. 从失败界面回到突破界面(复用结算返回逻辑, 自带超时+导航自救)
-        if not self.reward_detect_click(False):
-            logger.warning('Downgrade: fail to back to realm raid, skip')
-            return False
-        # 6. 刷新列表继续打
+        # 5. 从失败界面回到突破界面。
+        # 8-04修复(核心): reward_detect_click 的返回值语义是"是否领到三胜奖励",
+        # 不是"是否回到突破界面"。8-04 13:54 实测: 页面已回突破界面(I_BACK_RED 第2轮命中、
+        # OCR 票数 18/30), 只因无三胜奖励返回 False, 被旧代码误判为"回界面失败"直接结束
+        # 任务, 第6步刷新根本没执行, next_run 被推到明天。
+        # 修复: 调用后不依赖返回值, 自己截图确认 I_BACK_RED 在不在, 不在才 goto_page 兜底。
+        # (reward_detect_click 内部本身就有"3轮等不到→goto_page 导航自救"的分支, 此处是
+        # 双保险: 导航后再确认一次, 仍不在才再导航)
+        self.reward_detect_click(False)
+        self.screenshot()
+        if not self.appear(self.I_BACK_RED):
+            logger.warning('Downgrade: not back to realm raid after reward detect, goto realm raid')
+            self.goto_page(page_realm_raid)
+        # 6. 刷新列表继续打(刷新是降级闭环的最后一步, 只有刷新失败才真正判降级失败)
         self.screenshot()
         if not self.refresh_with_cd_wait(max_tries=2):
             logger.warning('Downgrade: fail to refresh list, skip')
