@@ -4,8 +4,6 @@
 
 from time import sleep, time
 
-import cv2
-import numpy as np
 import random
 from datetime import datetime, timedelta
 from module.atom.animate import RuleAnimate
@@ -275,39 +273,11 @@ class BaseTask(GlobalGameAssets, CostumeBase):
         if wait_time:
             wait_timer = Timer(wait_time)
             wait_timer.start()
-        # 8-05 新增画面静止检测(纯新增, 默认仅预警不打断等待, 行为与原来完全一致):
-        # 背景: AreaBoss 小号红叉 ROI 左偏3px 识别不到时, wait_until_appear 无超时
-        # 无限等 -> 60s 空集卡死重启。识别层已加全屏兜底(module/image/runtime.py),
-        # 此处是等待层最后一道预警: 连续 WAIT_STUCK_TRIGGER_SECONDS 秒画面静止且
-        # 目标未出现 -> warning + 触发 on_wait_stuck 钩子(默认空实现, 任务可覆盖
-        # 实现自救, 如随机点击/导航回已知页面)。不打断等待, 超时仍由 wait_time
-        # 或设备层卡死保护兜底。
-        stuck_elapsed = 0.0
-        stuck_sample_time = None
-        stuck_sample_image = None
         while 1:
             if skip_first_screenshot:
                 skip_first_screenshot = False
             else:
                 self.screenshot()
-            # 画面静止检测: 每 WAIT_STUCK_SAMPLE_INTERVAL 秒采样一次与上次对比
-            if stuck_sample_time is None:
-                stuck_sample_time = time()
-                stuck_sample_image = self.device.image
-            elif time() - stuck_sample_time >= self.WAIT_STUCK_SAMPLE_INTERVAL:
-                now = time()
-                diff = self._image_diff(stuck_sample_image, self.device.image)
-                if diff < self.WAIT_STUCK_DIFF_THRESHOLD:
-                    stuck_elapsed += now - stuck_sample_time
-                    if stuck_elapsed >= self.WAIT_STUCK_TRIGGER_SECONDS:
-                        logger.warning(f'Wait until appear {target.name}: screen static for '
-                                       f'{stuck_elapsed:.0f}s, target not appear, possible recognition issue')
-                        self.on_wait_stuck(target)
-                        stuck_elapsed = 0.0
-                else:
-                    stuck_elapsed = 0.0
-                stuck_sample_time = now
-                stuck_sample_image = self.device.image
             if wait_timer and wait_timer.reached():
                 logger.warning(f"Wait until appear {target.name} timeout")
                 return False
@@ -315,29 +285,6 @@ class BaseTask(GlobalGameAssets, CostumeBase):
                 return True
             if isinstance(target, RuleOcr) and self.ocr_appear(target):
                 return True
-
-    # 画面静止检测参数 (wait_until_appear 用, 均为纯新增, 不影响现有调用)
-    WAIT_STUCK_SAMPLE_INTERVAL = 5.0    # 每隔几秒采样一帧用于对比
-    WAIT_STUCK_DIFF_THRESHOLD = 1.5     # 平均绝对差阈值(缩小到64x36后), 小于视为静止
-    WAIT_STUCK_TRIGGER_SECONDS = 20.0   # 连续静止多少秒触发预警
-
-    @staticmethod
-    def _image_diff(img1, img2) -> float:
-        """两张截图缩小后的平均绝对差, 用于画面静止检测(64x36 足够判断动/静)。"""
-        if img1 is None or img2 is None:
-            return float('inf')
-        if img1.shape != img2.shape:
-            return float('inf')
-        a = cv2.resize(img1, (64, 36), interpolation=cv2.INTER_AREA)
-        b = cv2.resize(img2, (64, 36), interpolation=cv2.INTER_AREA)
-        return float(np.mean(np.abs(a.astype(np.float32) - b.astype(np.float32))))
-
-    def on_wait_stuck(self, target):
-        """画面长时间静止且目标未出现时的自救钩子(8-05 新增)。
-        默认空实现: 仅由 wait_until_appear 打 warning, 不干预流程。
-        任务可覆盖此方法实现自己的自救逻辑(如随机点击推进/导航回已知页面),
-        覆盖后仍不改变 wait_until_appear 的等待行为(继续等, 超时照旧)。"""
-        pass
 
     def wait_until_appear_then_click(self,
                                      target: RuleImage,

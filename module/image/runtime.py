@@ -701,26 +701,6 @@ class ImageRuntime:
                 int(template.shape[1]),
                 int(template.shape[0]),
             ]
-        # 8-05 新增兜底: ROI 内未命中 -> 全屏再匹配一次 (纯新增, 正常路径零开销)
-        # 背景: AreaBoss 小号红叉左偏3px(实际1191,24 vs ROI 1194,24), ROI 内匹配
-        # 0.708<0.8 判"不出现"导致死等卡死; 全屏匹配 0.969 命中。此兜底让所有
-        # ROI 偏移/缩放类问题自动恢复: 命中即回传真实位置(换算到全图坐标系)。
-        # 误报考量: 阈值同为 0.8 且仅 ROI 失败才全屏, 相似元素误命中概率低, 且
-        # 命中后位置就是"匹配到的元素", 比死等卡死更优; 命中打 info 便于追踪。
-        if not matched:
-            full_roi = [0, 0, int(image.shape[1]), int(image.shape[0])]
-            if list(roi_back) != full_roi:
-                full_source = self._crop(image, full_roi)
-                if (full_source.shape[0] >= template.shape[0]
-                        and full_source.shape[1] >= template.shape[1]):
-                    full_result = cv2.matchTemplate(full_source, template, cv2.TM_CCOEFF_NORMED)
-                    _, full_max_val, _, full_max_loc = cv2.minMaxLoc(full_result)
-                    if full_max_val > threshold:
-                        logger.info(f'{log_name} matched on full screen after roi miss '
-                                    f'(roi {max_val:.3f} -> full {full_max_val:.3f}), auto-relocated')
-                        roi_front = [int(full_max_loc[0]), int(full_max_loc[1]),
-                                     int(template.shape[1]), int(template.shape[0])]
-                        return True, float(full_max_val), roi_front
         logger.debug(f"{log_name} template score={max_val:.5f}")
         return matched, float(max_val), roi_front
 
@@ -773,35 +753,6 @@ class ImageRuntime:
                 int(best_shape[0]),
                 int(best_shape[1]),
             ]
-        # 8-05 新增兜底: ROI 内未命中 -> 全屏 multi-scale 再试一次 (与模板匹配同款, 见上)
-        if not matched:
-            full_roi = [0, 0, int(image.shape[1]), int(image.shape[0])]
-            if list(roi_back) != full_roi:
-                full_source = self._crop(image, full_roi)
-                full_best_val = -1.0
-                full_best_loc = None
-                full_best_shape = None
-                current_scale = min_scale
-                while current_scale <= max_scale + 1e-8:
-                    scaled_w = max(1, int(template.shape[1] * current_scale))
-                    scaled_h = max(1, int(template.shape[0] * current_scale))
-                    if scaled_w > full_source.shape[1] or scaled_h > full_source.shape[0]:
-                        current_scale += step
-                        continue
-                    scaled_template = cv2.resize(template, (scaled_w, scaled_h), interpolation=cv2.INTER_LINEAR)
-                    full_result = cv2.matchTemplate(full_source, scaled_template, cv2.TM_CCOEFF_NORMED)
-                    _, full_val, _, full_loc = cv2.minMaxLoc(full_result)
-                    if full_val > full_best_val:
-                        full_best_val = full_val
-                        full_best_loc = full_loc
-                        full_best_shape = (scaled_w, scaled_h)
-                    current_scale += step
-                if full_best_loc is not None and full_best_shape is not None and full_best_val > threshold:
-                    logger.info(f'{log_name} matched on full screen after roi miss '
-                                f'(roi {best_val:.3f} -> full {full_best_val:.3f}), auto-relocated')
-                    roi_front = [int(full_best_loc[0]), int(full_best_loc[1]),
-                                 int(full_best_shape[0]), int(full_best_shape[1])]
-                    return True, float(full_best_val), roi_front
         logger.debug(f"{log_name} multi-scale score={best_val:.5f}")
         return matched, float(best_val), roi_front
 
