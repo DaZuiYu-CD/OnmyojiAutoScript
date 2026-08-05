@@ -64,8 +64,14 @@ class AreaBossAssets:
 	I_FIRE = RuleImage(roi_front=(1109,490,100,73), roi_back=(1075,463,150,158), threshold=0.8, method="Template matching", file="./tasks/AreaBoss/res/res_fire.png")
 	# 跟buff冲突弃用 
 	I_CLOSE_RED = RuleImage(roi_front=(1190,24,37,38), roi_back=(1190,24,37,38), threshold=0.8, method="Template matching", file="./tasks/AreaBoss/res/res_close_red.png")
-	# 红色关闭 
-	I_AB_CLOSE_RED = RuleImage(roi_front=(1194,24,38,37), roi_back=(1194,24,38,37), threshold=0.8, method="Template matching", file="./tasks/AreaBoss/res/res_ab_close_red.png")
+	# 红色关闭
+	# 8-05 小号(主号陪1)实测: 鬼王详情页红叉实际在(1191,24), 比原ROI(1194,24)左偏3px,
+	# ROI内匹配只有0.708(<0.8阈值)判定"不出现", 战斗后收尾 wait_until_appear 无超时
+	# 无限等 -> 60s空集卡死重启。ROI扩到(1185,18,55,50)容错±9px, 滑窗匹配自动定位
+	# 实际位置(匹配成功后 roi_front 自动更新为真实坐标, 点击仍准确); 大号红叉位置正常
+	# 不受影响(滑窗会找到正确位置)。偏移疑似两模拟器渲染缩放细微差异或结算后详情页
+	# 布局微调(多了评分行)。
+	I_AB_CLOSE_RED = RuleImage(roi_front=(1185,18,55,50), roi_back=(1185,18,55,50), threshold=0.8, method="Template matching", file="./tasks/AreaBoss/res/res_ab_close_red.png")
 	# 筛选中 选中悬赏标识 
 	I_AB_FILTER_TITLE_REWARD = RuleImage(roi_front=(920,110,190,70), roi_back=(920,110,190,70), threshold=0.8, method="Template matching", file="./tasks/AreaBoss/res/ab_filter_title_reward.png")
 	# 筛选中 选中热门标识 

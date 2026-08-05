@@ -11,6 +11,7 @@ from module.atom.click import RuleClick
 from tasks.Component.GeneralBattle.general_battle import ExitMatcher, GeneralBattle
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_area_boss, page_shikigami_records, page_main
+from tasks.GameUi.default_pages import random_click
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.AreaBoss.assets import AreaBossAssets
 from tasks.AreaBoss.config_boss import AreaBossFloor
@@ -118,8 +119,29 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
             logger.info("地域鬼王第2只战斗失败")
         # 红色关闭
         logger.info("Script close red")
-        self.wait_until_appear(self.I_AB_CLOSE_RED)
-        self.ui_click(self.I_AB_CLOSE_RED, self.I_FILTER)
+        if self._wait_close_red():
+            self.ui_click(self.I_AB_CLOSE_RED, self.I_FILTER)
+
+    def _wait_close_red(self, max_wait: float = 15.0) -> bool:
+        """战斗收尾兜底: 等红叉出现(回到鬼王详情页)再点掉。
+        8-05 小号(主号陪1)实测: 详情页红叉左偏3px(实际1191,24 vs ROI预设1194,24),
+        ROI内匹配0.708<0.8判定不出现, 原 wait_until_appear 无超时无限等 -> 60s空集
+        卡死重启。assets ROI 已扩大容错±9px, 这里再加三重兜底:
+        1) 15s 内等红叉出现 -> True(正常路径)
+        2) 超时 -> 随机点击推进结算残留(限3轮, 与 DemonEncounter/RealmRaid 结算
+           处理同思路), 期间红叉出现 -> True
+        3) 仍失败 -> goto_page 导航回鬼王列表 -> False(调用方跳过点红叉)
+        """
+        if self.wait_until_appear(self.I_AB_CLOSE_RED, wait_time=max_wait):
+            return True
+        logger.warning(f'AreaBoss: close_red not appear within {max_wait}s, random click to advance')
+        for _ in range(3):
+            self.click(random_click(), interval=0.8)
+            if self.appear(self.I_AB_CLOSE_RED):
+                return True
+        logger.warning('AreaBoss: still no close_red, goto area boss list page')
+        self.goto_page(page_area_boss)
+        return False
 
     def appear_lit(self, target: RuleImage, s_threshold: int = 100) -> bool:
         """
@@ -179,8 +201,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
                     self.switch_to_level_60()
                     if not self.start_fight():  # 60级没打过退出吧
                         logger.warning("you are so weakness!")
-                        self.wait_until_appear(self.I_AB_CLOSE_RED)
-                        self.ui_click_until_disappear(self.I_AB_CLOSE_RED, interval=3)
+                        if self._wait_close_red():
+                            self.ui_click_until_disappear(self.I_AB_CLOSE_RED, interval=3)
                         return False
                     self.switch_difficulty(True)  # 打过了切换到极
                 else:  # 普通地鬼且没有开启打60级
@@ -196,8 +218,8 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, AreaBossAssets):
         if not self.start_fight():
             result = False
             logger.warning("Area Boss Fight Failed ")
-        self.wait_until_appear(self.I_AB_CLOSE_RED)
-        self.ui_click_until_disappear(self.I_AB_CLOSE_RED, interval=1)
+        if self._wait_close_red():
+            self.ui_click_until_disappear(self.I_AB_CLOSE_RED, interval=1)
         return result
 
     def start_fight(self) -> bool:
