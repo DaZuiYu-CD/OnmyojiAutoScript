@@ -339,7 +339,13 @@ async def sync_next_run(script_name: str, task: str, target_dt: str):
         return False
     config = mm.config_cache(script_name)
     target = datetime.strptime(target_dt, '%Y-%m-%d %H:%M:%S') if target_dt else None
-    config.task_delay(task=task, success=True, target=target)
+    # server=False 是必须的: task_delay 在 server=True 且 scheduler 配了 server_update 时,
+    # 会把 next_run 覆盖成 parse_tomorrow_server(明天 server_update 时刻), 导致"立即执行"
+    # 变成"明天才执行" —— 8-06 13:22 实测小号 next_run 被写成 2026-08-07 14:30:00,
+    # 调度器重载后 No task pending, Guild30Team 联动失败 (sync_next_run 从未真正生效过,
+    # 之前测试成功全靠被拉起的小号 next_run 恰好已过期)。
+    # server=False 后 target 直接生效, 小号 mtime 感知重载即可立即执行。
+    config.task_delay(task=task, success=True, target=target, server=False)
     script_process = mm.script_process[script_name]
     config.get_next()
     await script_process.broadcast_state({"schedule": config.get_schedule_data()})
