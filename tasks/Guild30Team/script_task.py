@@ -64,6 +64,13 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, GameUi, Guild30TeamA
                     f'count={conf.battle_count}, claim_reward={conf.claim_reward}, '
                     f'start_partner={conf.start_partner}, ack_timeout={conf.ack_timeout}s')
 
+        # 8-06: 每次任务启动先重置配对状态(清自己写的 joined 入队回报), 保证从"未配对"开始。
+        # 曾实测: 任务重启后旧 request 未过期被复用, 队员直接 ack 进 run_member 空等一个
+        # 不存在的房间 -> 300s 卡死重启 -> 死循环(旧轮 request 复用由 _handshake_member
+        # 的"已 ack 过"判断兜底); joined 旧 request_id 残留导致双确认 mismatch deny。
+        # 重置后本轮双确认不受旧轮残留干扰。ack/request 不删, 原因见 _reset_pairing_state。
+        self._reset_pairing_state()
+
         # 阶段1: 握手(通信层, 独立于游戏内流程)
         try:
             ok = self._handshake(conf)
@@ -86,6 +93,33 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, GameUi, Guild30TeamA
         self._finish(success=success, reason='farm done')
 
     # ============================== 阶段1: 握手 ==============================
+
+    def _reset_pairing_state(self) -> None:
+        """8-06: 每次任务启动时重置本账号的配对状态, 保证从"未配对"开始。
+
+        清掉**自己写的** joined (上一轮的入队回报残留), 让本轮双确认不受旧轮
+        干扰。曾实测: joined.json 里旧 request_id 残留 -> 队长开战前双确认
+        mismatch deny (8-06 14:36 实测 joined=ab257e4c want=70e2ad05)。
+
+        注意:
+        - **不删 request.json**: 那是队长(搭档)写的, 双方同时启动时删掉会让
+          先启动方这一轮白等(它写完 request 在等 ack, 找不到 ack 会超时失败)。
+        - **不删 ack.json**: 那是"配对证据", _handshake_member 的旧轮复用防护
+          要读它判断"这个 request 上一轮是否已 ack 过"——若在此清掉, previous_ack
+          永远为空, 复用防护永久失效(8-06 排查发现的自相矛盾, 已修正)。
+          本轮握手会覆盖写新 ack, 无需清理。
+        """
+        try:
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            cleared = []
+            for f in (JOINED_FILE,):
+                if f.exists():
+                    f.unlink()
+                    cleared.append(f.name)
+            if cleared:
+                logger.info(f'[Guild30] Reset pairing state, cleared: {", ".join(cleared)}')
+        except Exception as e:
+            logger.warning(f'[Guild30] Reset pairing state failed: {e}')
 
     def _handshake(self, conf) -> bool:
         if conf.user_status == Guild30UserStatus.LEADER:
@@ -172,9 +206,21 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, GameUi, Guild30TeamA
                 logger.info(f'[Guild30] Request exists but invalid ({reason}), '
                             f'will start partner and wait new request')
             else:
-                logger.info(f'[Guild30] Member got valid request: partner={request.get("partner")}, '
-                            f'count={request.get("count")}, request_id={str(request.get("request_id",""))[:8]}')
-                return self._write_ack(request)
+                # 8-06 旧轮复用防护: 这个 request 是不是上一轮已经 ack 过?
+                # 重启后旧 request 未过期(600s TTL)会被 verify 判"有效"而直接复用,
+                # 但队长那边的房间/轮次早已结束, 队员 ack 后进 run_member 空等一场
+                # 不存在的邀请 -> 300s 卡死重启 -> 死循环(8-06 实测"重启后仍等待")。
+                # 判断依据: 本账号上一轮写的 ack 里记录的 request_id 与当前 request
+                # 相同 = 旧轮残留, 不复用, 走拉起队长等新 request(新 request_id)。
+                previous_ack = self._read_ack()
+                if previous_ack.get('request_id') == request.get('request_id'):
+                    logger.info(f'[Guild30] Request already acked in previous run '
+                                f'(request_id={str(request.get("request_id", ""))[:8]}), '
+                                f'force re-pair, wait new request')
+                else:
+                    logger.info(f'[Guild30] Member got valid request: partner={request.get("partner")}, '
+                                f'count={request.get("count")}, request_id={str(request.get("request_id", ""))[:8]}')
+                    return self._write_ack(request)
         logger.info('[Guild30] No valid guild30 request, start partner (leader) and wait for its request')
         return self._wait_leader_request(conf)
 
@@ -470,16 +516,29 @@ class ScriptTask(GeneralBattle, GeneralInvite, GeneralRoom, GameUi, Guild30TeamA
     # ============================== 阶段3: 领奖 ==============================
 
     def _claim_reward(self):
-        """去寮三十页面领取已完成任务奖励 (复用 CollectiveMissions 的 get_task_reward)"""
-        try:
-            self.goto_page(page_collective_missions)
-            from tasks.CollectiveMissions.script_task import ScriptTask as CollectiveMissionsScriptTask
-            cm = CollectiveMissionsScriptTask(self.config, self.device)
-            cm.get_task_reward()
-            logger.info('Guild30 reward claimed')
-            self.goto_page(page_main)
-        except Exception as e:
-            logger.warning(f'Claim reward failed: {e}')
+        """去寮三十页面领取已完成任务奖励 (复用 CollectiveMissions 的 get_task_reward)。
+        8-06 加固: 小号(队长) farm 结束后页面可能停在识别不出的状态(exit_room 在
+        "已不在房间"时乱点把页面搞乱, 15:07 实测 goto_page 盲走 -> 点去寮按钮无效 ->
+        TooManyClick 领奖失败且只打 warning)。本次:
+        1. 每次尝试前先 goto_page(page_main) 从干净主界面出发(导航器有 Try switch
+           兜底能把 miss 页面带回主界面)
+        2. 失败重试一次(共 2 次), 仍失败则**明确提示奖励未领取需手动补领**
+           (之前失败静默, 任务还 success=True, 用户完全不知情)"""
+        for attempt in (1, 2):
+            try:
+                # 先回主界面: 从干净状态出发, 避免 farm 结束的坏页面直接导航盲走
+                self.goto_page(page_main)
+                self.goto_page(page_collective_missions)
+                from tasks.CollectiveMissions.script_task import ScriptTask as CollectiveMissionsScriptTask
+                cm = CollectiveMissionsScriptTask(self.config, self.device)
+                cm.get_task_reward()
+                logger.info('Guild30 reward claimed')
+                self.goto_page(page_main)
+                return
+            except Exception as e:
+                logger.warning(f'Claim reward attempt {attempt} failed: {e}')
+        # 两次尝试都失败: 明确告警, 不静默
+        logger.warning('[Guild30] Reward NOT claimed after 2 attempts, please claim manually')
 
     # ============================== 收尾 ==============================
 
