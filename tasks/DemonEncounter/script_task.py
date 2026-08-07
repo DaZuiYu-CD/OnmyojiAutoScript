@@ -15,7 +15,7 @@ from module.base.timer import Timer
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.DemonEncounter.config import BossType, DemonEncounter, convert_to_general_battle_config
 from tasks.DemonEncounter.page import page_rwt
-from tasks.GameUi.default_pages import page_main
+from tasks.GameUi.default_pages import page_main, random_click
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_shikigami_records
 from tasks.DemonEncounter.assets import DemonEncounterAssets
@@ -176,11 +176,53 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
         # 等待挑战, 5秒也是等
         time.sleep(5)
         refresh_timer = Timer(280)
+        # 8-05 修复: 原逻辑把 I_BOSS_DONE_CHECK 单独当作"boss 打完"判定, 但失败结算页
+        # 上也匹配该图(8-03 沙湖小号2 实测 0.983) -> 失败后误判 done -> break 跳到
+        # wait_until_appear(I_BOSS_GATHER) 无限等, 而失败结算页 I_BOSS_GATHER 只有 0.032
+        # 永不出现 -> 60s 空集卡死 GameStuckError 重启。
+        # 修复: 1) done 判定改为 I_BOSS_DONE_CHECK 且 I_BOSS_GATHER/I_DE_LOCATION 双确认
+        # (真回到主界面才算 done); 2) 新增失败结算页清理: 识别到 done_check 但不在主界面
+        # 时, 点左上角白色退出键(I_BOSS_BACK_WHITE 实测 0.923)推进结算, 随机点击兜底,
+        # 点掉后继续等主界面 —— 失败与胜利同样处理, 不按异常处理。
+        settle_click = 0  # 结算页连续点击计数, 防止误判死循环
         while True:
             self.screenshot()
-            if self.appear(self.I_BOSS_DONE_CHECK):
+            done_check = self.appear(self.I_BOSS_DONE_CHECK)
+            back_home = self.appear(self.I_BOSS_GATHER) or self.appear(self.I_DE_LOCATION)
+            if done_check and back_home:
+                # 8-05 补: 清理分支可能已挂 PAUSE(下面 done_check 分支), break 前必须清掉,
+                # 否则 PAUSE 残留会把设备层卡死保护从 60s 放宽到 300s, 后续真卡死要多等 240s
+                self.device.stuck_record_clear()
                 break
+            # 失败结算页清理: done_check 出现但不在主界面 -> 点退出推进结算
+            # (胜利结算页 I_BOSS_WIN 匹配, 同样走这里点掉, 与失败一视同仁)
+            if done_check and not back_home:
+                # 挂 PAUSE 长等待标记: 结算页清理可能持续数秒, 不挂标记会以空集状态
+                # 触发设备层 60s 普通卡死保护(8-03 沙湖小号2 就是空集卡死)。PAUSE 在
+                # stuck_long_wait_list 内, 保护放宽到 300s, 足够点掉结算页回主界面。
+                self.device.stuck_record_clear()
+                self.device.stuck_record_add('PAUSE')
+                if settle_click >= 6:
+                    # 连续 6 次点击仍未离开结算页(退出键识别不到/点击无效): 不再硬点,
+                    # 直接导航回封魔主界面兜底, 彻底避免无限空转。导航前清 PAUSE,
+                    # 导航本身 10-30s 不会触发 60s 保护, 清掉避免标记残留
+                    logger.warning('Dismiss battle settlement page failed after 6 clicks, goto page_rwt')
+                    self.device.stuck_record_clear()
+                    self.goto_page(page_rwt)
+                    break
+                elif self.appear_then_click(self.I_BOSS_BACK_WHITE, interval=1):
+                    settle_click += 1
+                    continue
+                elif settle_click < 6:
+                    # 退出键没识别到: 随机点击推进结算页 (与 run_general_battle 结算
+                    # 处理同款, 限 6 次防死循环, 正常 1-3 次即点掉)
+                    self.click(random_click(), interval=0.8)
+                    settle_click += 1
+                    continue
             if self.appear(self.I_BOSS_GATHER):
+                # 8-05 补: 回到集结界面说明结算页已离开, 重置结算页点击计数,
+                # 防止结算动画导致 DONE_CHECK 闪烁时计数残留误触发 6 次兜底
+                settle_click = 0
                 if not refresh_timer.started() or refresh_timer.reached():
                     self.device.stuck_record_clear()
                     self.device.stuck_record_add('BATTLE_STATUS_S')
@@ -208,15 +250,27 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
             self.wait_until_appear(self.I_PREPARE_HIGHLIGHT, wait_time=2)
 
         # 等待回到挑战boss主界面
-        self.wait_until_appear(self.I_BOSS_GATHER)
+        # 8-05 修复: 原 wait_until_appear(I_BOSS_GATHER) 无超时无限等, 一旦上面 done 误判
+        # 或结算页未点干净就 break 出来, 会永久卡死。加 15s 超时, 超时后 goto_page 导航兜底。
+        if not self.wait_until_appear(self.I_BOSS_GATHER, wait_time=15):
+            logger.warning('Wait back to boss main page timeout, goto page_rwt')
+            self.goto_page(page_rwt)
+        settle_back = Timer(15)
+        settle_back.start()
         while 1:
             self.screenshot()
             if self.appear(self.I_DE_LOCATION):
                 break
             if self.appear_then_click(self.I_UI_CONFIRM_SAMLL, interval=1):
+                settle_back.reset()
                 continue
             if self.appear_then_click(self.I_BOSS_BACK_WHITE, interval=1):
+                settle_back.reset()
                 continue
+            if settle_back.reached():
+                logger.warning('Back to demon main page timeout, goto page_rwt')
+                self.goto_page(page_rwt)
+                break
         # 返回到封魔主界面
 
     def execute_lantern(self):
@@ -248,6 +302,17 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
         if not self.appear(self.I_DE_AWARD):
             self.ui_get_reward(self.I_DE_RED_DHARMA)
         self.wait_until_appear(self.I_DE_AWARD)
+        # 8-05 新增: skip_lantern 开启时跳过四个灯笼的奖励处理, 直接打 boss。
+        # 探查(上方循环)与红达摩领取是 boss 出现/奖励的前提, 保留; 只跳过
+        # 灯笼的宝箱/答题/小怪/结界处理, 由 run() 里的 execute_boss 直接找 boss。
+        # 注意用双层 getattr 防御: ①skip_lantern 放在嵌套模型 lantern_config 里
+        # (config_model.extract_groups 顶层必须是 $ref 嵌套模型, 否则 KeyError);
+        # ②旧后端进程的 config 模型没有 lantern_config 字段, 直接访问会
+        # AttributeError(8-05 20:29 主号陪1 实测), 双层 getattr 兜底旧 config
+        # 取默认 False=不跳过, 不炸。
+        if getattr(getattr(self.conf, 'lantern_config', None), 'skip_lantern', False):
+            logger.info('skip_lantern enabled, skip 4 lanterns and go boss directly')
+            return
         # 然后到四个灯笼
         match_click = {
             1: self.C_DE_1,

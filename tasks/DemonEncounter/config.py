@@ -131,8 +131,20 @@ class UtilizeScheduler(Scheduler):
     priority: int = Field(default=2, description='priority_help')
 
 
+class LanternConfig(BaseModel):
+    # 8-05 新增: 跳过四个灯笼的奖励处理(宝箱/答题/小怪/结界等), 只探查后直接打 boss。
+    # 默认 False 保持原行为(处理全部灯笼); True 时 execute_lantern 点探查点亮灯笼后
+    # 直接结束, 不逐个处理灯笼, 由 execute_boss 直接找 boss 打。适用只想要 boss 掉落
+    # 的小号(灯笼小怪战斗/答题/宝箱全部跳过, 任务时长明显缩短)。
+    # ⚠️ 必须放嵌套模型里, 不能放 DemonEncounter 顶层: config_model.extract_groups
+    # 遍历任务模型顶层 properties 时假设全是带 $ref 的嵌套模型, 顶层普通 bool 字段
+    # 会 KeyError('$ref') 导致 script_task 接口炸, 后端重启加载配置失败(8-05 21:20 实测)。
+    skip_lantern: bool = Field(default=False, description='skip_lantern_help')
+
+
 class DemonEncounter(ConfigBase):
     scheduler: UtilizeScheduler = Field(default_factory=UtilizeScheduler)
+    lantern_config: LanternConfig = Field(default_factory=LanternConfig)
     box_buy_config: BoxBuyConfig = Field(default_factory=BoxBuyConfig)
     best_demon_boss_config: BestDemonBossSelect = Field(default_factory=BestDemonBossSelect)
     demon_soul_config: DemonConfig = Field(default_factory=DemonConfig)
