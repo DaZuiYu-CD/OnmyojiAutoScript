@@ -158,11 +158,13 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         for i in range(3):
             while 1:
                 self.screenshot()
-                if self.appear(self.I_SA_ACCOUNT_DROP_DOWN_CLOSED):
+                # 列表收起态判定: 有"登录"按钮(展开态列表覆盖后没有, 实测收起 True / 展开 False)
+                # 2026-08-08 修复: 原用 I_SA_ACCOUNT_DROP_DOWN_CLOSED(列表图标) 判定, 但新版图标仅 24x14 像素,
+                # 模板匹配跨截图极不稳定(自截图 1.0 / 同页另一截图 0.27) → 改登录按钮判定 + 固定坐标点列表图标展开
+                if self.appear(self.I_SA_ACCOUNT_LOGIN_BTN):
                     if self.ocr_appear(self.O_SA_ACCOUNT_ACCOUNT_SELECTED):
                         return True
-                    self.ui_click_until_disappear(self.I_SA_ACCOUNT_DROP_DOWN_CLOSED,
-                                                  interval=1.5)
+                    self.click(self.C_SA_LOGIN_FORM_ACCOUNT_LIST_ICON, interval=1.5)
                     continue
 
                 # 账号列表已打开状态

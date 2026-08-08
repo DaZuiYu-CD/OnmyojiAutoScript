@@ -74,6 +74,7 @@ from tasks.Hyakkiyakou.config import Hyakkiyakou
 from tasks.HeroTest.config import HeroTest
 from tasks.FindJade.config import FindJade
 from tasks.MemoryScrolls.config import MemoryScrolls
+from tasks.AccountDaily.config import AccountDaily
 # ----------------------------------------------------------------------------------------------------------------------
 
 # 每周任务---------------------------------------------------------------------------------------------------------------
@@ -139,6 +140,7 @@ class ConfigModel(ConfigBase):
     hero_test: HeroTest = Field(default_factory=HeroTest)
     find_jade: FindJade = Field(default_factory=FindJade)
     memory_scrolls: MemoryScrolls = Field(default_factory=MemoryScrolls)
+    account_daily: AccountDaily = Field(default_factory=AccountDaily)
     infinite_battle: InfiniteBattle = Field(default_factory=InfiniteBattle)
 
     # 这些是每周任务
@@ -408,6 +410,13 @@ class ConfigModel(ConfigBase):
             for k, v in dict(task_object).items():
                 if k not in group:
                     continue
+                # 前端可能在列表元素不足时直接写入新组字段(如 AccountDaily 添加账号后立即保存
+                # account_list_2.character), 此时 v[index] 越界抛 IndexError → 保存失败。
+                # 按 index 自动补齐空项(用元素类型默认构造), 与"先填数量再填内容"的流程等价
+                # (8-07 实测 IndexError 修复, FindJade 等列表型任务同样受益)。
+                if isinstance(v, list) and index is not None:
+                    while len(v) <= index:
+                        v.append(type(v[0])() if v else None)
                 group_object = v[index] if group_object is None else None
         argument_object = getattr(group_object, argument, None)
 

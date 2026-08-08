@@ -26,9 +26,14 @@ class SwitchAccountAssets:
 	# 登录界面-选择服务器-点击关闭选择服务器界面的空白区域 
 	C_SA_LOGIN_FORM_CANCEL_SVR_SELECT = RuleClick(roi_front=(50,70,60,360), roi_back=(50,70,60,360), name="sa_login_form_cancel_svr_select")
 	# 登录界面-用户中心-右上角关闭按钮 
-	C_SA_LOGIN_FORM_USER_CENTER_CLOSE_BTN = RuleClick(roi_front=(1055,120,20,20), roi_back=(1055,120,20,20), name="sa_login_form_user_center_close_btn")
+	# 登录界面-用户中心页(网易 mpay 新版) 右上角关闭按钮
+	# 8-08 改版后按钮移到 (1075,35)-(1176,136) 中心(1125,85), 旧 ROI(1055,120) 点不到
+	C_SA_LOGIN_FORM_USER_CENTER_CLOSE_BTN = RuleClick(roi_front=(1085,45,80,80), roi_back=(1085,45,80,80), name="sa_login_form_user_center_close_btn")
 	# 登录界面-账号选择界面-右上角关闭按钮 
 	C_SA_LOGIN_FORM_ACCOUNT_CLOSE_BTN = RuleClick(roi_front=(895,165,40,40), roi_back=(895,165,40,40), name="sa_login_form_account_close_btn")
+	# 账号选择页(网易 mpay 新版) 账号条目右侧"列表图标"——点击展开历史账号列表
+	# 8-08 改版后收起态判定改用 I_SA_ACCOUNT_LOGIN_BTN(登录按钮, 大且稳定), 展开动作点这个固定坐标(图标 24x14 太小无法做模板)
+	C_SA_LOGIN_FORM_ACCOUNT_LIST_ICON = RuleClick(roi_front=(816,277,97,97), roi_back=(816,277,97,97), name="sa_login_form_account_list_icon")
 	# 游戏庭院内 左上角 头像 
 	C_SA_EG_PROFILE_PHOTO = RuleClick(roi_front=(35,35,55,55), roi_back=(35,35,55,55), name="sa_eg_profile_photo")
 	# 选择服务器界面 底部角色名 列表---与ocr.json中同名对象区域一致 
@@ -42,10 +47,12 @@ class SwitchAccountAssets:
 	O_SA_SELECT_SVR_SVR_LIST = RuleOcr(roi=(205,540,815,25), area=(205,540,815,25), mode="FULL", method="Default", keyword="", name="sa_select_svr_svr_list")
 	# 选择服务器界面 底部角色名 列表 
 	O_SA_SELECT_SVR_CHARACTER_LIST = RuleOcr(roi=(418,131,641,481), area=(417,135,647,482), mode="Full", method="Default", keyword="", name="sa_select_svr_character_list")
-	# 选择账号界面 账号列表 
-	O_SA_ACCOUNT_ACCOUNT_LIST = RuleOcr(roi=(460,280,440,330), area=(460,280,440,330), mode="FULL", method="Default", keyword="", name="sa_account_account_list")
-	# 选择账号界面 已选择的账号 
-	O_SA_ACCOUNT_ACCOUNT_SELECTED = RuleOcr(roi=(460,280,370,50), area=(460,280,370,50), mode="SINGLE", method="Default", keyword="", name="sa_account_account_selected")
+	# 选择账号界面(网易 mpay 新版) 展开后的历史账号列表
+	# 8-08 改版: 列表展开后 3 个账号条目 y≈292-615(asd63207135/qwe18850544525/m18850544525), 旧 ROI(460,280,440,330) 覆盖不全 → 下扩到 y620
+	O_SA_ACCOUNT_ACCOUNT_LIST = RuleOcr(roi=(440,285,420,335), area=(440,285,420,335), mode="FULL", method="Default", keyword="", name="sa_account_account_list")
+	# 选择账号界面(网易 mpay 新版) 已选择的账号
+	# 8-08 改版后账号名在 [447,284][777,325], 旧 ROI(460,280,370,50) 左侧裁掉 13px 会漏 asd 前缀 → 左扩到 x430
+	O_SA_ACCOUNT_ACCOUNT_SELECTED = RuleOcr(roi=(430,275,380,60), area=(430,275,380,60), mode="SINGLE", method="Default", keyword="", name="sa_account_account_selected")
 	# 登录界面 用户中心(区别于游戏内用户中心) 账户名 
 	O_SA_LOGIN_FORM_USER_CENTER_ACCOUNT = RuleOcr(roi=(290,185,290,50), area=(290,185,290,50), mode="SINGLE", method="Default", keyword="", name="sa_login_form_user_center_account")
 	# 判断是否在 选择服务器 界面的文本特质 
@@ -66,22 +73,28 @@ class SwitchAccountAssets:
 	I_SA_USER_CENTER = RuleImage(roi_front=(190,390,330,200), roi_back=(190,390,330,200), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_user_center.png")
 	# 游戏内-点击头像弹出的设置界面-顶部设置字样 
 	I_SA_USER_CENTER_PROFILE = RuleImage(roi_front=(590,60,90,55), roi_back=(590,60,90,55), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_user_center_profile.png")
-	# 游戏内点击用户中心后弹出的 切换用户按钮 
-	I_SA_SWITCH_ACCOUNT_BTN = RuleImage(roi_front=(930,170,160,75), roi_back=(930,170,160,75), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_switch_account_btn.png")
+	# 登录界面-用户中心页(网易 mpay 新版全屏页, 8 月改版) 的"切换账号"按钮
+	# 旧版模板(109x37)匹配不到新版按钮(152x65), 8-08 切号卡死根因; 新模板 2026-08-08 从真实截图裁剪, 中心 (1050,188)
+	I_SA_SWITCH_ACCOUNT_BTN = RuleImage(roi_front=(940,140,220,90), roi_back=(940,140,220,90), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_switch_account_btn.png")
 	# 登录界面 已登录状态下 点击用户中心后弹出的对话框中 复制账号按钮 
 	I_SA_USER_CENTER_COPY_BTN = RuleImage(roi_front=(460,280,640,50), roi_back=(460,280,640,50), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_user_center_copy_btn.png")
-	# 登录界面-选取账号界面-顶部网易游戏LOGO 
-	I_SA_NETEASE_GAME_LOGO = RuleImage(roi_front=(500,170,300,90), roi_back=(500,170,300,90), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_netease_game_logo.png")
-	# 登录界面-选取账号界面-账号下拉菜单-关闭标志. 
-	I_SA_ACCOUNT_DROP_DOWN_CLOSED = RuleImage(roi_front=(850,320,30,25), roi_back=(850,320,30,25), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_account_drop_down_closed.png")
+	# 登录界面-账号选择页(网易 mpay 新版登录页 MpayLoginActivity, 8 月改版) 顶部 logo
+	# 旧模板(223x61)匹配不到新版; 新模板 2026-08-08 从真实截图裁剪(480x54, 命中 0.9999), 中心(640,205)
+	I_SA_NETEASE_GAME_LOGO = RuleImage(roi_front=(400,178,480,54), roi_back=(400,178,480,54), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_netease_game_logo.png")
+	# 登录界面-账号选择页(网易 mpay 新版) 账号列表收起标志 = 账号条目右侧"列表图标"
+	# 8-08 改版后旧下拉箭头模板匹配不到; 新模板(109x109, 命中 0.9999) 2026-08-08 从收起态截图裁剪, 点击展开历史账号列表
+	I_SA_ACCOUNT_DROP_DOWN_CLOSED = RuleImage(roi_front=(800,270,130,120), roi_back=(800,270,130,120), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_account_drop_down_closed.png")
 	# 登录界面-选取账号界面-账号下拉菜单-添加新账号. 
 	I_SA_ACCOUNT_DROP_DOWN_ADD_ACCOUNT = RuleImage(roi_front=(400,540,220,60), roi_back=(400,540,220,60), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_account_drop_down_add_account.png")
-	# 登录界面-选取账号界面-账号下拉菜单-已经打开标志. 
-	I_SA_ACCOUNT_LOGIN_BTN = RuleImage(roi_front=(400,400,480,90), roi_back=(400,400,480,90), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_account_login_btn.png")
-	# 登录界面-选择手机类型为苹果. 
-	I_SA_LOGIN_FORM_APPLE = RuleImage(roi_front=(508,354,100,100), roi_back=(508,355,100,100), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/res_sa_login_form_apple.png")
-	# 登录界面-选择手机类型为android 
-	I_SA_LOGIN_FORM_ANDROID = RuleImage(roi_front=(671,353,100,100), roi_back=(670,352,100,100), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/res_sa_login_form_android.png")
+	# 登录界面-账号选择页(网易 mpay 新版) 登录按钮
+	# 旧模板(80x45)匹配不到新版按钮(587x79); 新模板 2026-08-08 裁剪, 命中 1.0, 中心(639,456)
+	I_SA_ACCOUNT_LOGIN_BTN = RuleImage(roi_front=(346,417,587,79), roi_back=(346,417,587,79), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/sa_account_login_btn.png")
+	# 登录界面-选择平台页(网易 mpay 新版) iOS 图标
+	# 8-08 改版后旧模板匹配不到; 新模板(111x163, 命中 1.0) 2026-08-08 裁剪, 图标 [497,360][598,513] 中心(547,436)
+	I_SA_LOGIN_FORM_APPLE = RuleImage(roi_front=(490,350,115,170), roi_back=(490,350,115,170), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/res_sa_login_form_apple.png")
+	# 登录界面-选择平台页(网易 mpay 新版) Android 图标
+	# 8-08 改版后旧模板匹配不到; 新模板(111x163, 命中 1.0) 2026-08-08 裁剪, 图标 [680,360][781,513] 中心(730,436)
+	I_SA_LOGIN_FORM_ANDROID = RuleImage(roi_front=(673,350,115,170), roi_back=(673,350,115,170), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/res_sa_login_form_android.png")
 	# 判断是否在 选择服务器 界面的标志物 角色的服务器图标还未显示时 
 	I_SA_CHECK_SELECT_SVR_1 = RuleImage(roi_front=(213,133,181,60), roi_back=(210,128,185,68), threshold=0.8, method="Template matching", file="./tasks/Component/SwitchAccount/res/res_sa_check_select_svr_1.png")
 	# 判断是否在 选择服务器 界面的标志物 角色的服务器图标已经显示时 
