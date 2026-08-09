@@ -7,6 +7,7 @@ from cached_property import cached_property
 
 from module.exception import TaskEnd
 from module.logger import logger
+from module.base.timer import Timer  # 8-09: netherworld() 空转超时兜底需要(曾漏导入致 NameError)
 
 from tasks.GameUi.game_ui import GameUi
 from tasks.GameUi.page import page_main, page_hunt, page_hunt_kirin, page_shikigami_records
