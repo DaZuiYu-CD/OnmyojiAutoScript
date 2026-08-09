@@ -475,8 +475,15 @@ class GameUi(BaseTask, GameUiAssets):
             context="goto_page",
         )
 
-    def _wait_for_destination(self, destination: Page, timeout: float = 4.0) -> bool:
+    def _wait_for_destination(self, destination: Page, timeout: float = 8.0) -> bool:
         """等待下一页面稳定出现。
+
+        8-09 实测调整：默认超时 4.0s -> 8.0s。
+        背景：主号陪1(双开第二实例)模拟器渲染慢，点击"寮"按钮后寮页面需约 7s 才完整
+        渲染（卡死截图锚点 I_CHECK_GUILD=0.989 证明页面实际已到达），4s 窗口内识别不到
+        -> navigator 反复判 Transition cannot reach -> 往返 6 轮触发 GameTooManyClickError
+        误判卡死重启（20:31 GuildBanquet、17:20 AbyssShadows 均中招）。
+        对比：主号同路径 2.6s 到达，8s 窗口对其无感；仅慢模拟器获益，余量约 1s。
 
         Args:
             destination: 目标页面。
