@@ -123,6 +123,14 @@ class ScriptTask(GameUi, GeneralBattle, GeneralInvite, SwitchSoul, HuntAssets):
 
     def netherworld(self):
         logger.hr('netherworld', 2)
+        # 8-09 加固: 原 while 1 在 5 个 appear 判断全 False 时静默空转(只截图无日志),
+        # 60s 空集卡死保护触发 GameStuckError 重启(8-09 主号陪1 实测, 根因是 I_NW
+        # ROI 贴边 1px 失配)。挂 PAUSE 长等待标记(300s 保护) + 120s 超时兜底,
+        # 超时后优雅结束本轮(set_next_run 由外层 run() 收尾), 不再干等到卡死重启
+        self.device.stuck_record_clear()
+        self.device.stuck_record_add('PAUSE')
+        wait_timer = Timer(120)
+        wait_timer.start()
         while 1:
             self.screenshot()
             if self.is_in_room(False):
@@ -133,16 +141,26 @@ class ScriptTask(GameUi, GeneralBattle, GeneralInvite, SwitchSoul, HuntAssets):
                 break
 
             if self.appear_then_click(self.I_NW, interval=0.9):
+                wait_timer.reset()
                 continue
             if self.appear_then_click(self.I_UI_CONFIRM, interval=0.9):
+                wait_timer.reset()
                 continue
             if self.appear_then_click(self.I_NW_CHALLAGE, interval=1.5):
+                wait_timer.reset()
                 continue
             if self.appear(self.I_NW_DONE):
                 # 今日已挑战
                 logger.warning('Today have already challenged the Netherworld')
+                self.device.stuck_record_clear()
                 self.ui_click_until_disappear(self.I_UI_BACK_RED)
                 return
+            if wait_timer.reached():
+                # 120s 内既没进房间也没识别到任何按钮: 活动未开放/识别失配, 不再干等
+                logger.warning('Netherworld entry timeout after 120s, skip this round')
+                self.device.stuck_record_clear()
+                return
+        self.device.stuck_record_clear()
         logger.info('Start battle')
         self.run_general_battle(
             self.config.hunt.netherworld_battle_config,

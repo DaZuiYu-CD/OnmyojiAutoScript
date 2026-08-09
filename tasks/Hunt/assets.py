@@ -32,11 +32,18 @@ class HuntAssets:
 
 
 	# Image Rule Assets
-	# 点击阴界之门 
-	I_NW = RuleImage(roi_front=(1060,602,100,100), roi_back=(1060,602,100,100), threshold=0.8, method="Template matching", file="./tasks/Hunt/netherworld/netherworld_nw.png")
-	# 点击挑战 
-	I_NW_CHALLAGE = RuleImage(roi_front=(306,590,171,63), roi_back=(306,590,171,63), threshold=0.8, method="Template matching", file="./tasks/Hunt/netherworld/netherworld_nw_challage.png")
-	# 今日已挑战 
-	I_NW_DONE = RuleImage(roi_front=(308,600,156,41), roi_back=(308,600,156,41), threshold=0.9, method="Template matching", file="./tasks/Hunt/netherworld/netherworld_nw_done.png")
+	# 点击阴界之门
+	# 8-09 修复: roi_back 原 (1060,602,100,100) 与模板 100x100 同尺寸、零容错,
+	# 小号模拟器按钮偏移 1px(实测实际位置 1059,601)时 ROI 截掉模板边缘,
+	# ROI 内匹配 0.764 < 0.8 阈值 → appear 判"不存在" → netherworld() 空转 60s 卡死重启
+	# (8-09 主号陪1 实测, 与 8-05 AreaBoss 红叉 ROI 贴边同病)。扩大 roi_back 到
+	# ±10px 容错, 滑窗匹配自动定位; 命中后运行时自动更新 roi_front 为精确位置
+	I_NW = RuleImage(roi_front=(1050,592,120,120), roi_back=(1050,592,120,120), threshold=0.8, method="Template matching", file="./tasks/Hunt/netherworld/netherworld_nw.png")
+	# 点击挑战
+	# 8-09 同批加固: roi_back 加 ±10px 余量(原与模板同尺寸贴边)
+	I_NW_CHALLAGE = RuleImage(roi_front=(296,580,191,83), roi_back=(296,580,191,83), threshold=0.8, method="Template matching", file="./tasks/Hunt/netherworld/netherworld_nw_challage.png")
+	# 今日已挑战
+	# 8-09 同批加固: roi_back 加 ±10px 余量
+	I_NW_DONE = RuleImage(roi_front=(298,590,176,61), roi_back=(298,590,176,61), threshold=0.9, method="Template matching", file="./tasks/Hunt/netherworld/netherworld_nw_done.png")
 
 
