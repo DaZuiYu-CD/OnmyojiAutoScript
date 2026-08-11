@@ -188,8 +188,14 @@ class ScriptTask(GeneralBattle, GameUi, SwitchSoul, RyouToppaAssets):
             self.device.stuck_record_clear()
 
         if retry_in_hours is not None:
-            # 次数不足: target=现在+N小时, task_delay 与 success/failure_interval 取最近, N小时必然生效
-            self.set_next_run(task='RyouToppa', finish=True, server=True,
+            # 次数不足: target=现在+N小时, 必须 server=False
+            # (2026-08-11) 若 server=True 且 server_update≠9:00(本任务配置为 09:01:00),
+            # task_delay 会走 parse_tomorrow_server 把 target 覆盖成"明天 server_update",
+            # 导致"1小时后重试"实际排到明天(8-11 实测 next_run=明天09:01:25)。
+            # 没票(0/6)≠没有目标: 没票应短重试; 没有可挑战目标才走 plan_tomorrow_ryoutoppa
+            # 排明天 server_update(那条路径 custom_next_run->set_next_run server=True 默认,
+            # 仍会被 parse_tomorrow_server 覆盖, 不受本处 server=False 影响)。
+            self.set_next_run(task='RyouToppa', finish=True, server=False,
                               target=datetime.now() + timedelta(hours=retry_in_hours))
         elif success:
             self.set_next_run(task='RyouToppa', finish=True, server=True, success=True)
