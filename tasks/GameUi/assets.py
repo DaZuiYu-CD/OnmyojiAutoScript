@@ -62,8 +62,12 @@ class GameUiAssets:
 	I_CHECK_HERO_TEST = RuleImage(roi_front=(148,10,133,48), roi_back=(137,0,157,71), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_hero_test.png")
 	# 御灵页面标志 
 	I_CHECK_GORYOU = RuleImage(roi_front=(880,8,30,39), roi_back=(880,8,30,39), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_goryou.png")
-	# 委派页面标志 
-	I_CHECK_DELEGATION = RuleImage(roi_front=(839,132,49,45), roi_back=(839,132,49,45), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_delegation.png")
+	# 委派页面标志
+	# roi_back 扩 ±10px 滑窗容错: 原 (839,132,49,45) 与模板同尺寸零容错,
+	# MuMu 多实例亚像素渲染偏移 1-3px 即失配 (老区号 8-12/8-13 委派页 8s 识别不到
+	# -> Transition cannot reach 死循环 1 小时, 主号同资产 3.5s 正常)。
+	# 8-09 AreaBoss/Hunt 已验证 ±10px 滑窗修复模式 (0.764->0.889)。
+	I_CHECK_DELEGATION = RuleImage(roi_front=(839,132,49,45), roi_back=(829,122,69,65), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_delegation.png")
 	# 秘闻页面标志 
 	I_CHECK_SECRET_ZONES = RuleImage(roi_front=(1145,592,110,119), roi_back=(1145,592,110,119), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_secret_zones.png")
 	# 地鬼页面标志 
@@ -145,8 +149,10 @@ class GameUiAssets:
 	I_CHECK_MALL = RuleImage(roi_front=(147,527,82,82), roi_back=(147,527,82,82), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_mall.png")
 	# 商店推荐页面标志 
 	I_CHECK_MALL_RECOMMEND = RuleImage(roi_front=(930,12,42,37), roi_back=(905,0,100,100), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_mall_recommend.png")
-	# 阴阳寮页面标志 
-	I_CHECK_GUILD = RuleImage(roi_front=(1072,630,49,46), roi_back=(1072,630,49,46), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_guild.png")
+	# 阴阳寮页面标志
+	# roi_back 扩 ±10px 滑窗容错: 原 (1072,630,49,46) 零容错, 与 I_CHECK_DELEGATION 同款雷。
+	# 8-09 宴会小号虽 0.989 命中未炸, 但同为零容错资产留隐患, 一并加固。
+	I_CHECK_GUILD = RuleImage(roi_front=(1072,630,49,46), roi_back=(1062,620,69,66), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_guild.png")
 	# 组队页面标志 
 	I_CHECK_TEAM = RuleImage(roi_front=(32,585,82,65), roi_back=(0,563,148,139), threshold=0.8, method="Template matching", file="./tasks/GameUi/page/page_check_team.png")
 	# 图鉴页面标志 

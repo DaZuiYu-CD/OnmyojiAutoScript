@@ -155,8 +155,15 @@ class ScriptTask(GameUi, GeneralBattle, DemonEncounterAssets, SwitchSoul):
                     self.ui_click_until_disappear(self.I_UI_BACK_RED)
                     raise TaskEnd('DemonEncounter')
 
-                if (self.appear_then_click(self.I_BOSS_FIRE, interval=3)
-                        or self.appear_then_click(self.I_BEST_BOSS_FIRE, interval=3)):
+                fire_btn = None
+                # 8-17 修复: 原 appear_then_click 用 coord() 在 roi_front(100x100)
+                # 内整体随机取点, 而按钮热区只有中部(参考 best_boss_fire 100x36),
+                # 随机到按钮外时点击落空 -> 弹不出集结确认框 -> 3 次后误判
+                # "already done" 退出(8-17 主号连点 3 次 BOSS_FIRE 失败即此因)。
+                # 改为全局方法 appear_then_click_center: 中心 ±20px 随机,
+                # 既保命中又保留抖动防检测。
+                if (self.appear_then_click_center(self.I_BOSS_FIRE, interval=3, offset=20)
+                        or self.appear_then_click_center(self.I_BEST_BOSS_FIRE, interval=3, offset=20)):
                     boss_fire_count += 1
                     continue
             return True

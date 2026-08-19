@@ -1,5 +1,6 @@
 import math
 import time
+from enum import Enum
 
 from module.atom.click import RuleClick
 from module.atom.gif import RuleGif
@@ -10,6 +11,20 @@ from module.logger import logger
 from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
 from tasks.Component.SwitchAccount.switch_account_config import AccountInfo
 from tasks.base_task import BaseTask
+
+
+class CharacterMatchResult(Enum):
+    """
+    switch_character 匹配结果四态(8-14 新增, 防同名角色点错服务器):
+        MATCHED   - 角色(+服务器)确认, 已点击 svr icon, 列表已收起, 正常进入
+        CHAR_ONLY - 角色名命中但服务器名未识别 → 不选服, 收起列表直接用默认角色进入
+        SVR_ONLY  - 服务器名命中但角色名未找到 → 由 login() 调 switch_svr 直接点服务器
+        NOT_FOUND - 两者都未命中(翻页后仍无) → 账号层"重试3次跳过"兜底
+    """
+    MATCHED = 1
+    CHAR_ONLY = 2
+    SVR_ONLY = 3
+    NOT_FOUND = 4
 
 
 class LoginAccount(BaseTask, SwitchAccountAssets):
@@ -73,15 +88,27 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
         self.click(self.C_SA_LOGIN_FORM_CANCEL_SVR_SELECT)
         return False
 
-    def switch_character(self, characterName: str):
+    def _text_similar(self, target: str, ocr_text: str) -> bool:
         """
-              需保证账号已登录 且处于登录界面
-        @param characterName:
-        @return:
-        @rtype:
+        字符交集宽松匹配(8-14 用户要求放宽): 两文本交集字符数 >= 2 即算命中。
+        原因: OCR 对中文/数字识别不稳定("砂狐口园"vs"砂狐乐园"、"呵盗鱼"vs"啊盗鱼"),
+        完全相等匹配会漏; 交集 2-3 字命中即可覆盖常见误识别。
+        注意: 目标 2 字时交集必须 2 字全命中, 4 字目标命中 2 字即通过。
         """
-        logger.info("start switch_character")
-        # 改成对比是否出现 已有角色 
+        if not target or not ocr_text:
+            return False
+        return len(set(target) & set(ocr_text)) >= 2
+
+    def switch_character(self, characterName: str, svr: str = '') -> CharacterMatchResult:
+        """
+        在角色列表中选择角色。8-14 改造: 增加服务器校验(四态返回), 防同名角色点错服务器。
+        布局前提(实测): 中部角色列表为"服务器名分区标题 + 该服角色竖排", 角色 y 坐标
+        落在所属服务器名 y 下方(0~160px)内; 每个角色行上方 30px 是其服务器图标,
+        点击该图标 = 选中此角色(并切到所属服)且列表收起。
+        返回: 见 CharacterMatchResult。
+        """
+        logger.info("start switch_character character=%s svr=%s", characterName, svr)
+        # 改成对比是否出现 已有角色
         self.ui_click(self.C_SA_LOGIN_FORM_SWITCH_SVR_BTN, self.O_SA_CHECK_SELECT_SVR)
         # 展开底部角色列表,显示角色所属服务器
         self.screenshot()
@@ -89,50 +116,93 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
             logger.info("open svr icon")
             self.click(self.C_SA_SELECT_SVR_CHARACTER_LIST, interval=1.5)
             self.wait_until_appear(self.I_SA_CHECK_SELECT_SVR_2, False, 1)
-            # self.ui_click(self.C_SA_SELECT_SVR_CHARACTER_LIST, self.I_SA_CHECK_SELECT_SVR_2, 1.5)
             self.screenshot()
 
         self.O_SA_SELECT_SVR_CHARACTER_LIST.keyword = characterName
-        lastCharacterNameList = []
+        lastEntries = []
         while 1:
             self.screenshot()
             ocrRes = self.O_SA_SELECT_SVR_CHARACTER_LIST.detect_and_ocr(self.device.image)
-            # 去除角色等级数字
-            characterNameList = [ocrResItem.ocr_text.lstrip('1234567890 ([<>])【】（）《》') for ocrResItem in ocrRes]
-            logger.info(characterNameList)
-            ocrResBoxList = [ocrResItem.box for ocrResItem in ocrRes]
-            for index, item in enumerate(characterNameList):
-                if item != characterName:
-                    continue
-                tmp = self.O_SA_SELECT_SVR_CHARACTER_LIST
-                from copy import deepcopy
-                tmpClick = RuleClick(
-                    roi_back=deepcopy(tmp.roi),
-                    roi_front=[
-                        tmp.roi[0] + ocrResBoxList[index][0][0],
-                        tmp.roi[1] + ocrResBoxList[index][0][1],
-                        ocrResBoxList[index][1][0] - ocrResBoxList[index][0][0],
-                        ocrResBoxList[index][2][1] - ocrResBoxList[index][1][1]],
-                    name="tmpClick"
-                )
+            # 去除角色等级数字, 保留 box 坐标用于服务器分区判断
+            entries = []
+            for item in ocrRes:
+                text = item.ocr_text.lstrip('1234567890 ([<>])【】（）《》')
+                if text:
+                    entries.append((text, item.box))
+            logger.info([e[0] for e in entries])
 
-                # 此时 tmp 内存储的时角色名位置,而点击角色名没有反应
-                # 所以需要获取到对应的服务器图标位置
-                tmpClick.roi_front[1] -= 30
-                self.ui_click_until_disappear(tmpClick, stop=self.I_SA_CHECK_SELECT_SVR_2,
-                                              interval=3)
-                logger.info("character %s found,and clicked svr icon", characterName)
-                return True
-            if lastCharacterNameList == characterNameList:
+            # 1. 目标服务器名(宽匹配) → 记录 y 中心
+            svr_y = []
+            for text, box in entries:
+                if svr and self._text_similar(svr, text):
+                    cy = (box[0][1] + box[2][1]) / 2
+                    svr_y.append(cy)
+                    logger.info("svr %s matched ocr=%s y=%.0f", svr, text, cy)
+
+            # 2. 目标角色名(宽匹配) → 记录 (box, y 中心)
+            char_hits = []
+            for text, box in entries:
+                if self._text_similar(characterName, text):
+                    cy = (box[0][1] + box[2][1]) / 2
+                    char_hits.append((box, cy))
+                    logger.info("character %s matched ocr=%s y=%.0f", characterName, text, cy)
+
+            # 3. 角色命中 且 (有服务器信息时) 属于目标服务器分区 → 点它
+            if char_hits and (svr_y or not svr):
+                target_box = None
+                if svr_y:
+                    # 角色 y 落在某服务器名 y 下方 0~160px 内 → 属于该服务器分区
+                    for box, cy in char_hits:
+                        if any(0 <= cy - sy <= 160 for sy in svr_y):
+                            target_box = box
+                            break
+                    if target_box is None:
+                        # 角色存在但不在目标服务器分区(同名跨服) → 不点(防点错), 继续翻页找
+                        logger.warning("character %s found but not in svr %s partition, keep swiping",
+                                       characterName, svr)
+                else:
+                    # 未配置 svr: 无法校验服务器, 直接点第一个命中(保持原行为)
+                    target_box = char_hits[0][0]
+                if target_box is not None:
+                    tmp = self.O_SA_SELECT_SVR_CHARACTER_LIST
+                    from copy import deepcopy
+                    tmpClick = RuleClick(
+                        roi_back=deepcopy(tmp.roi),
+                        roi_front=[
+                            tmp.roi[0] + target_box[0][0],
+                            tmp.roi[1] + target_box[0][1],
+                            target_box[1][0] - target_box[0][0],
+                            target_box[2][1] - target_box[1][1]],
+                        name="tmpClick"
+                    )
+                    # 点击角色名上方的服务器图标(点击角色名本身无反应)
+                    tmpClick.roi_front[1] -= 30
+                    self.ui_click_until_disappear(tmpClick, stop=self.I_SA_CHECK_SELECT_SVR_2, interval=3)
+                    logger.info("character %s found in svr %s, clicked svr icon", characterName, svr)
+                    return CharacterMatchResult.MATCHED
+
+            # 4. 只有角色名命中(服务器名没识别到) → 不选服, 收起列表用默认角色进入
+            if char_hits and svr and not svr_y:
+                logger.info("character %s found but svr %s not recognized, will use default role",
+                            characterName, svr)
+                return CharacterMatchResult.CHAR_ONLY
+
+            # 5. 只有服务器名命中(角色名没找到) → 直接点服务器
+            if not char_hits and svr_y:
+                logger.info("svr %s recognized but character %s not found", svr, characterName)
+                return CharacterMatchResult.SVR_ONLY
+
+            # 6. 都没命中 → 翻页; 翻完退出
+            texts = [e[0] for e in entries]
+            if lastEntries == texts:
                 break
-            logger.info(f'{characterName} not found,start swipe')
-            lastCharacterNameList = characterNameList
+            lastEntries = texts
+            logger.info('%s not found,start swipe', characterName)
             self.swipe(self.S_SA_ACCOUNT_LIST_UP)
-            # 等待滑动动画完成
             time.sleep(1.5)
 
         self.click(self.C_SA_LOGIN_FORM_CANCEL_SVR_SELECT, 1.5)
-        return False
+        return CharacterMatchResult.NOT_FOUND
 
     def jump2SelectAccount(self):
         """
@@ -292,14 +362,46 @@ class LoginAccount(BaseTask, SwitchAccountAssets):
                     continue
 
                 # 已登录 查找对应角色
-                if not isCharacterSelected and self.switch_character(accountInfo.character):
-                    isCharacterSelected = True
-                    continue
+                if not isCharacterSelected:
+                    # 配置"不切换服务器"(switch_svr=False): 不展开列表, 直接用账号默认角色进入
+                    # (8-14 用户优先需求: 账号每次用完都停在目标角色上, 展开列表反而引入点错风险)
+                    if not accountInfo.switch_svr:
+                        logger.info("character %s config switch_svr=False, use default role directly",
+                                    accountInfo.character)
+                        isCharacterSelected = True
+                        continue
+                    result = self.switch_character(accountInfo.character, accountInfo.svr)
+                    if result == CharacterMatchResult.MATCHED:
+                        # 角色+服务器确认, switch_character 已点击 svr icon 收起列表
+                        isCharacterSelected = True
+                        continue
+                    elif result == CharacterMatchResult.CHAR_ONLY:
+                        # 角色名命中但服务器名没识别到 → 不选服, 收起列表用默认角色进入
+                        # (8-14 用户判断: 账号默认角色就是目标角色, 盲选服务器点错风险更大)
+                        logger.info("character %s found but svr %s not recognized, use default role",
+                                    accountInfo.character, accountInfo.svr)
+                        self.click(self.C_SA_LOGIN_FORM_CANCEL_SVR_SELECT, 1.5)
+                        isCharacterSelected = True
+                        continue
+                    elif result == CharacterMatchResult.SVR_ONLY:
+                        # 角色名没找到但服务器名识别到 → 直接点服务器选中目标服后进入
+                        # (8-14 用户优化: 服务器匹配到可以直接点服务器, 不用回列表找角色)
+                        logger.info("character %s not found, select svr %s directly",
+                                    accountInfo.character, accountInfo.svr)
+                        if self.switch_svr(accountInfo.svr):
+                            self.click(self.C_SA_LOGIN_FORM_CANCEL_SVR_SELECT, 1.5)
+                            isCharacterSelected = True
+                        else:
+                            logger.warning("select svr %s failed", accountInfo.svr)
+                            isCharacterSelected = False
+                        continue
+                    else:  # CharacterMatchResult.NOT_FOUND
+                        break
                 break
             continue
 
         # 切换角色失败 /未找到该角色
-        # 尝试使用 选择服务器方式
+        # 尝试使用 选择服务器方式 (最后一搏)
         if isAccountLogon and not isCharacterSelected and accountInfo.svr is not None and accountInfo.svr != "":
             logger.info("try to find character with svrName %s", accountInfo.svr)
             isCharacterSelected = self.switch_svr(accountInfo.svr)

@@ -2,6 +2,7 @@ from adbutils import device
 
 from module.config.config import Config
 from module.device.device import Device
+from module.exception import AccountLoginFailed, RequestHumanTakeover
 from tasks.Component.SwitchAccount.assets import SwitchAccountAssets
 from tasks.Component.SwitchAccount.exit_game import ExitGame
 from tasks.Component.SwitchAccount.login_account import LoginAccount
@@ -46,10 +47,19 @@ class SwitchAccount(LoginAccount, ExitGame, GameUi, SwitchAccountAssets):
         if not self.login(self.to_account_info):
             return False
         logger.info("%s login suc", self.to_account_info.character)
-        # 处理位于登录界面各种奇葩弹窗
+        # 处理位于登录界面各种奇葩弹窗 + 等待进入庭院
         login_handler = LoginService(config=self.config, device=self.device)
         login_handler.set_specific_usr(self.to_account_info.svr)
-        login_handler.app_handle_login()
+        try:
+            login_handler.app_handle_login()
+        except RequestHumanTakeover as e:
+            # 进入游戏失败: LoginService 内部已"重启游戏重试 2 次"仍未识别到庭院(8-13 改造)。
+            # 原逻辑直接抛 RequestHumanTakeover → AccountDaily 透传给调度器 → 整批账号全灭(8-10 实测)。
+            # 现在转成 AccountLoginFailed, AccountDaily 捕获后跳过该账号, 后续账号继续跑。
+            logger.error('switchAccount: 账号 %s-%s 进入游戏失败(已重启游戏重试2次), 跳过该账号: %s',
+                         self.to_account_info.character, self.to_account_info.svr, e)
+            raise AccountLoginFailed('account %s-%s enter game failed' % (
+                self.to_account_info.character, self.to_account_info.svr))
 
         return True
 

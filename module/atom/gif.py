@@ -66,3 +66,14 @@ class RuleGif:
     def front_center(self) -> tuple:
         x, y, w, h = self.roi_front
         return int(x + w//2), int(y + h//2)
+
+    def center_offset(self, offset: int = 20) -> tuple:
+        """
+        返回roi_front中心坐标并附加随机偏移, 与 RuleImage/RuleClick.center_offset
+        保持同一命名与语义, 供 base_task.appear_then_click_center 全局调用。
+        """
+        x, y, w, h = self.roi_front
+        cx, cy = int(x + w // 2), int(y + h // 2)
+        ox = np.random.randint(-offset, offset + 1)
+        oy = np.random.randint(-offset, offset + 1)
+        return max(0, cx + ox), max(0, cy + oy)

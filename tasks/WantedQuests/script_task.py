@@ -13,7 +13,7 @@ from cached_property import cached_property
 from module.atom.image import RuleImage
 from module.atom.ocr import RuleOcr
 from module.base.timer import Timer
-from module.exception import TaskEnd
+from module.exception import TaskEnd, GamePageUnknownError, GameTooManyClickError, GameStuckError
 from module.image.recipes import match_highlight_rule
 from module.logger import logger
 from tasks.Component.Costume.config import MainType
@@ -85,7 +85,23 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
             error_count = 0
             if not self.open_wq_info():
                 continue
-            self.execute_mission(total - cu)
+            try:
+                self.execute_mission(total - cu)
+            except (GamePageUnknownError, GameTooManyClickError, GameStuckError) as e:
+                # 2026-08-18 修复: 单个悬赏执行出错(如战斗结束回探索页导航失败/卡剧情)
+                # 时, 不再让异常冒泡中断整个 WantedQuests 任务, 而是跳过当前悬赏继续。
+                # 依赖: execute_mission 的 finally 已把 wq_info 加入 wq_executed_set,
+                # get_ordered_wq_infos 会自动跳过已执行任务 -> continue 后 find_wq
+                # 会找到下一个未执行悬赏, 不会重复卡在同一个上。
+                # 实测 8-18 19:11-19:18 主号 3 次卡秘闻剧情 -> Game page unknown ->
+                # failed 3 times -> 进程退出; 此兜底保证单个悬赏失败不影响其余。
+                logger.warning(f'Wanted quest execute failed, skip current: {e}')
+                try:
+                    self.goto_page(page_exploration)
+                except Exception as e2:
+                    logger.warning(f'Goto exploration after quest error failed too: {e2}')
+                sleep(1.5)
+                continue
             sleep(1.5)
         self.next_run()
         raise TaskEnd('WantedQuests')
@@ -351,11 +367,25 @@ class ScriptTask(WQExplore, SecretScriptTask, WantedQuestsAssets):
                 return 
             # 又臭又长的对话针的是服了这个网易
             click_count = 0
+            # 2026-08-18 修复: 单次秘闻总超时, 防止剧情对话推进失败无限循环
+            # 触发设备层 60s 卡死保护 -> GameStuckError -> 重启。实测 8-18 19:11
+            # 主号选秘闻'安梦奇缘·肆'后卡剧情对话, 83s 无进展才被卡死保护打断,
+            # 连续 3 次后进程退出。这里限制单次最多 55s, 超时主动放弃本次秘闻
+            # (点返回退出剧情, 由主循环 continue 跳过该悬赏继续下一个)。
+            secret_timer = Timer(55).start()
             while 1:
                 self.screenshot()
                 if self.get_current_page() in [page_battle_prepare, page_battle]:
                     self.run_general_battle(self.battle_config, exit_matcher=any_of(self.I_UI_BACK_RED, self.I_WQSE_SPECIAL_FIRE))
                     break
+                if secret_timer.reached():
+                    logger.warning('Secret mission timeout, force to close and skip')
+                    # 强制退出剧情/秘闻界面, 回到探索页, 由主循环跳过该悬赏
+                    try:
+                        self.ui_click_until_disappear(self.I_UI_BACK_RED)
+                    except Exception:
+                        pass
+                    return
                 if self.appear_then_click(self.I_WQSE_FIRE, interval=1):
                     continue
                 if self.appear(self.I_UI_BACK_RED, threshold=0.7) and not self.appear(self.I_WQSE_FIRE):

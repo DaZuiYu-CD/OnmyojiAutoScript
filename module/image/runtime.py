@@ -671,6 +671,64 @@ class ImageRuntime:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         return float(gray.mean())
 
+    @staticmethod
+    def _ensure_search_margin(
+        roi_back: list[int],
+        template_shape: tuple[int, int],
+        image_shape: tuple[int, int],
+        margin: int = 5,
+    ) -> list[int]:
+        """
+        保证搜索区域相对模板至少留 margin 像素的滑窗余量。
+
+        roi_back 与模板同尺寸(零容错)或比模板小时, matchTemplate 的滑窗只有
+        1 个位置甚至直接失配 —— MuMu 多实例亚像素渲染偏移 1-3px 即低于阈值
+        (8-09/8-13 委派/寮/宴会多起事故根因)。这里统一以原 roi_back 中心为锚
+        外扩到 模板+2*margin, 提供滑窗搜索空间; 余量已足够时原样返回, 不影响
+        现有资产行为。坐标 clamp 到图像边界, 贴边资产不会越界。
+
+        Args:
+            roi_back: 资产定义的原搜索区域 [x, y, w, h]。
+            template_shape: 模板形状 (height, width)。
+            image_shape: 整帧截图形状 (height, width)。
+            margin: 期望保留的单侧最小滑窗余量(像素), 默认 5。
+
+        Returns:
+            扩展后的搜索区域 [x, y, w, h]。
+        """
+        th, tw = int(template_shape[0]), int(template_shape[1])
+        ih, iw = int(image_shape[0]), int(image_shape[1])
+        x, y, w, h = [int(v) for v in roi_back]
+        # 余量已足够: 完全不干预, 保持资产定义行为
+        if w >= tw + 2 * margin and h >= th + 2 * margin:
+            return [x, y, w, h]
+        # 8-14 回归修复: 必须以原 roi_back 为基向四周扩展, 而不是以中心重算。
+        # 原实现以 roi_back 中心为锚重算, 对"单边余量不足"的资产(如
+        # I_RS_RECORDS_SHIKI roi_back=(1145,548,55,90), 宽余量3px<5px 触发扩窗,
+        # 高度 90 被压到 53)会把滑窗范围缩小, 模板真实位置(偏离 roi 顶部 39px
+        # 的 y=587)超出滑窗 -> matchTemplate 从 0.994 跌到 0.168 -> 8-14 主号
+        # KekkaiUtilize 进成长页锚点失配 8s 超时 -> 反复点式神育成 -> TooManyClick
+        # 卡死重启死循环(实锤: 旧逻辑 score=0.994 vs 中心重算后 0.168)。
+        # 正确做法: 原 roi_back 四周各扩 margin; 若原区域某轴小于 模板+2*margin,
+        # 该轴再额外扩足(均分两侧)。原 roi_back 范围 100% 保留, 模板真实位置不丢,
+        # 同时获得滑窗余量。clamp 到图像边界(贴边时允许达不到目标尺寸)。
+        left = top = margin
+        if tw + 2 * margin > w:
+            left = max(left, (tw + 2 * margin - w + 1) // 2)
+        if th + 2 * margin > h:
+            top = max(top, (th + 2 * margin - h + 1) // 2)
+        nx = x - left
+        ny = y - top
+        nw = w + 2 * left
+        nh = h + 2 * top
+        if nw > iw:
+            nw = iw
+        if nh > ih:
+            nh = ih
+        nx = max(0, min(nx, iw - nw))
+        ny = max(0, min(ny, ih - nh))
+        return [nx, ny, nw, nh]
+
     def _template_match_image(
         self,
         image: np.ndarray,
@@ -684,10 +742,14 @@ class ImageRuntime:
 
         `roi_back` 表示在原图上的搜索区域，命中结果会被换算回原图坐标系。
         """
-        source = self._crop(image, roi_back)
+        # 自动补滑窗余量: 零容错/比模板小的 roi_back 以中心为锚外扩 margin(默认5px),
+        # 吸收 MuMu 多实例亚像素渲染偏移 1-3px (8-09/8-13 委派/寮/宴会多起事故根因)。
+        # 余量已足够(资产正常定义)时返回原值, 行为完全不变。
+        search_roi = self._ensure_search_margin(roi_back, template.shape, image.shape)
+        source = self._crop(image, search_roi)
         if self._template_image_invalid(template):
             logger.error(f"Template image is invalid: {None if template is None else template.shape}")
-            return True, 1.0, [int(v) for v in roi_back]
+            return True, 1.0, [int(v) for v in search_roi]
         if source.shape[0] < template.shape[0] or source.shape[1] < template.shape[1]:
             return False, -1.0, None
         result = cv2.matchTemplate(source, template, cv2.TM_CCOEFF_NORMED)
@@ -696,8 +758,8 @@ class ImageRuntime:
         matched = max_val > threshold
         if matched:
             roi_front = [
-                int(max_loc[0] + roi_back[0]),
-                int(max_loc[1] + roi_back[1]),
+                int(max_loc[0] + search_roi[0]),
+                int(max_loc[1] + search_roi[1]),
                 int(template.shape[1]),
                 int(template.shape[0]),
             ]
@@ -849,7 +911,9 @@ class ImageRuntime:
         if rule["method"] != "Template matching":
             raise ValueError(f"unknown method {rule['method']}")
         template = self._get_template_entry(rule["file"]).image_rgb
-        source = self._crop(image, rule["roi_back"])
+        # 自动补滑窗余量: 与 _template_match_image 同源处理, 避免全量匹配同样受零容错困扰
+        search_roi = self._ensure_search_margin(rule["roi_back"], template.shape, image.shape)
+        source = self._crop(image, search_roi)
         if self._template_image_invalid(template):
             logger.error(f"Template image is invalid: {None if template is None else template.shape}")
             return []
@@ -860,8 +924,8 @@ class ImageRuntime:
         matches = []
         for point in zip(*locations[::-1]):
             score = float(results[point[1], point[0]])
-            x = int(rule["roi_back"][0] + point[0])
-            y = int(rule["roi_back"][1] + point[1])
+            x = int(search_roi[0] + point[0])
+            y = int(search_roi[1] + point[1])
             matches.append((score, x, y, int(template.shape[1]), int(template.shape[0])))
         return matches
 

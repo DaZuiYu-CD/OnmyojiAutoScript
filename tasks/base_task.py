@@ -258,6 +258,38 @@ class BaseTask(GlobalGameAssets, CostumeBase):
 
         return appear
 
+    def appear_then_click_center(self,
+                                 target: Union[RuleImage, RuleGif, RuleClick],
+                                 interval: float = None,
+                                 threshold: float = None,
+                                 offset: int = 20) -> bool:
+        """
+        出现了就点击其中心, 并附加小范围随机偏移(模拟人手抖动)。
+
+        与 appear_then_click 的区别: 后者用 coord() 在 roi_front 整个框内随机,
+        当 roi_front 远大于按钮实际热区时(如 BOSS_FIRE 100x100 但按钮只占中部)
+        可能随机到按钮外导致点击落空; 本方法以中心为锚仅在 ±offset 像素内随机,
+        既保证命中按钮, 又保留"点击位置不固定"的防检测特性。
+
+        适用范围: 任何"识别到一个按钮/图标, 希望点击必中且保留随机抖动"的场景,
+        如集结挑战、确认框、入口图标等。offset 可按需调整(越大抖动越明显, 越小
+        越精准)。
+
+        Args:
+            target: 待点击的目标资产(RuleImage/RuleGif/RuleClick 均可)。
+            interval: 与 appear() 相同的识别防抖间隔。
+            threshold: 可覆盖匹配阈值。
+            offset: 中心向四周的最大随机偏移像素数, 默认 20。
+
+        Returns:
+            bool: 是否识别到并点击(与 appear_then_click 语义一致)。
+        """
+        appear = self.appear(target, interval=interval, threshold=threshold)
+        if appear:
+            x, y = target.center_offset(offset)
+            self.device.click(x, y, control_name=target.name)
+        return appear
+
     def wait_until_appear(self,
                           target: RuleImage | RuleOcr,
                           skip_first_screenshot=False,

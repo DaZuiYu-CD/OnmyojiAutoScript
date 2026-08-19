@@ -1,6 +1,8 @@
 # This Python file uses the following encoding: utf-8
 # @author runhey
 # github https://github.com/runhey
+import time
+
 from module.base.timer import Timer
 from module.exception import RequestHumanTakeover, GameTooManyClickError, GameStuckError
 from module.logger import logger
@@ -119,17 +121,34 @@ class LoginService(BaseTask, RestartAssets, GameUiAssets):
         return login_success
 
     def app_handle_login(self) -> bool:
+        """
+        登录后等待进入庭院(点"进入游戏"→ 等庭院特征 I_MAIN_GOTO_SHIKIGAMI_RECORDS 出现)。
+        点"进入游戏"后长时间未识别到庭院(GameStuckError/TooManyClick, 设备层 60s 卡死保护触发)
+        → 重启游戏重新登录, 最多重试 2 次; 2 次仍失败 → 抛 RequestHumanTakeover。
+        2026-08-13 改造(8-10 实测根因): 原逻辑"重启游戏 1 次后立即抛人工接管", 且重启后不再等待,
+        导致 AccountDaily 切号登录时一次偶发加载卡死(如回归号 60s 未进庭院)就整批账号全灭。
+        现在给 2 次机会(重启游戏→重新点进入游戏→再等), 偶发慢加载/回归号能恢复;
+        2 次仍失败才抛人工接管, 由调用方决定跳过该账号或人工介入(AccountDaily 捕获后跳过账号)。
+        """
         self.device.stuck_record_clear()
         self.device.click_record_clear()
-        try:
-            self._app_handle_login()
-            return True
-        except (GameTooManyClickError, GameStuckError) as e:
-            logger.warning(e)
-            self.device.app_stop()
-            self.device.app_start()
+        max_retry = 2
+        for attempt in range(1, max_retry + 1):
+            try:
+                self._app_handle_login()
+                return True
+            except (GameTooManyClickError, GameStuckError) as e:
+                logger.warning('Login wait failed attempt %d/%d: %s', attempt, max_retry, e)
+                if attempt < max_retry:
+                    logger.info('Restart game and retry login wait')
+                    self.device.app_stop()
+                    self.device.app_start()
+                    time.sleep(5)
+                # 重试前清空卡死/点击记录, 避免上次失败残留影响下一次判定
+                self.device.stuck_record_clear()
+                self.device.click_record_clear()
 
-        logger.critical('Login failed')
+        logger.critical('Login failed: 点"进入游戏"后 %d 次未识别到庭院(已重启游戏重试)', max_retry)
         logger.critical('Onmyoji server may be under maintenance, or you may lost network connection')
         raise RequestHumanTakeover
 

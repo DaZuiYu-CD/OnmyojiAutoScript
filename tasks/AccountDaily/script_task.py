@@ -11,7 +11,7 @@
 
 from pathlib import Path
 
-from module.exception import TaskEnd, RequestHumanTakeover, GameStuckError, GameNotRunningError
+from module.exception import TaskEnd, RequestHumanTakeover, GameStuckError, GameNotRunningError, AccountLoginFailed
 from module.logger import logger
 from tasks.AccountDaily.config import AccountDaily
 from tasks.Component.Login.service import LoginService
@@ -60,9 +60,9 @@ class ScriptTask(GameUi):
             # 任务清单打印出来, 方便一眼核对配置是否符合预期
             logger.info('AccountDaily: 任务清单(%d个): %s', len(tasks), tasks)
 
-            # 切号(失败重试 RETRY_TIMES 次, 仍失败跳过该账号)
+            # 切号(失败重试 RETRY_TIMES 次, 仍失败跳过该账号; 进入游戏失败直接跳过不重试)
+            # 失败原因与跳过日志已在 _switch_account_with_retry 内部详细输出(含截图路径)
             if not self._switch_account_with_retry(account):
-                logger.error('AccountDaily: 账号 %s 切号失败(%d次), 跳过该账号', account.character, RETRY_TIMES)
                 summary.append((account.character, '切号失败', '', ''))
                 continue
 
@@ -96,7 +96,7 @@ class ScriptTask(GameUi):
         AccountDailyItem → SwitchAccount 需要的 AccountInfo。
         为什么: SwitchAccount.login() 内部调用 AccountInfo.is_account_alias(OCR 账号比对)
         和 preprocessAccount, AccountDailyItem 没有这些方法(8-08 实测 AttributeError);
-        两模型字段同构(character/svr/account/account_alias/apple_or_android/last_complete_time),
+        两模型字段同构(character/svr/account/account_alias/apple_or_android/switch_svr/last_complete_time),
         转换后即可复用整个切号链路, 且不破坏 AccountDaily 自己的 config 结构。
         """
         return AccountInfo(
@@ -105,6 +105,7 @@ class ScriptTask(GameUi):
             account=account.account,
             account_alias=account.account_alias,
             apple_or_android=account.apple_or_android,
+            switch_svr=account.switch_svr,
             last_complete_time=account.last_complete_time,
         )
 
@@ -113,11 +114,21 @@ class ScriptTask(GameUi):
         切号并处理登录弹窗, 失败重试 RETRY_TIMES 次。
         为什么重试: 切号失败多是 OCR 识别问题(角色名/账号识别不准), 重试往往能成功,
         直接跳过会导致该号任务全部漏跑。重试仍失败才跳过账号(不能中断整个流程)。
+        2026-08-13 补充: 登录进游戏失败(AccountLoginFailed)不进入重试 ——
+        LoginService 内部已"重启游戏重试 2 次", 再重试切号会变成 3×2=6 次登录尝试,
+        且多为回归号/游戏加载问题, 重试意义不大, 直接跳过该账号(用户 8-13 指示)。
         """
         for attempt in range(1, RETRY_TIMES + 1):
             logger.info('AccountDaily: 切号 %s-%s 第 %d/%d 次', account.character, account.svr, attempt, RETRY_TIMES)
             try:
                 ok = SwitchAccount(self.config, self.device, self._to_account_info(account)).switchAccount()
+            except AccountLoginFailed as e:
+                # 进入游戏失败(点"进入游戏"后重启重试 2 次仍未识别到庭院) → 跳过该账号, 不重试
+                # 8-10 实测: 点错服务器同名角色(回归号)后 60s 未进庭院, 原逻辑人工接管整批全灭
+                self._save_failure_screenshot(account.character)
+                logger.error('AccountDaily: 账号 %s 进入游戏失败(重启游戏重试2次后仍未识别到庭院), 跳过该账号: %s',
+                             account.character, e)
+                return False
             except RequestHumanTakeover:
                 # 登录界面出现无法处理的异常(如未知页面), 需要人工介入 → 透传, 由调度器 exit(1)
                 logger.critical('AccountDaily: 切号 %s 请求人工接管, 透传给调度器', account.character)
@@ -129,7 +140,24 @@ class ScriptTask(GameUi):
                 logger.info('AccountDaily: 切号成功 %s', account.character)
                 return True
             logger.warning('AccountDaily: 切号失败 %s 第 %d/%d 次', account.character, attempt, RETRY_TIMES)
+        logger.error('AccountDaily: 账号 %s 切号失败(%d次), 跳过该账号', account.character, RETRY_TIMES)
         return False
+
+    def _save_failure_screenshot(self, character: str):
+        """
+        登录进游戏失败时保存现场截图(log/screenshots/), 便于事后人工核对:
+        卡在什么画面、是不是点错服务器/回归号。文件名是毫秒时间戳, 日志输出完整路径。
+        """
+        try:
+            self.device.save_screenshot(genre='AccountDaily')
+            folder = Path('./log/screenshots')
+            files = sorted(folder.glob('*.png'), key=lambda f: f.stat().st_mtime, reverse=True)
+            if files:
+                logger.info('AccountDaily: 账号 %s 失败截图已保存: %s', character, files[0])
+            else:
+                logger.warning('AccountDaily: 账号 %s 失败截图保存失败(目录为空)', character)
+        except Exception as e:
+            logger.warning('AccountDaily: 账号 %s 保存失败截图异常: %s', character, e)
 
     # ------------------------------------------------------------------ 单任务
 

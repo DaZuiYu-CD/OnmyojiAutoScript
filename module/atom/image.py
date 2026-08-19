@@ -332,6 +332,28 @@ class RuleImage:
         x, y, w, h = self.roi_front
         return int(x + w//2), int(y + h//2)
 
+    def center_offset(self, offset: int = 20) -> tuple:
+        """
+        获取roi_front中心坐标并附加随机偏移, 模拟人手点击的微小抖动。
+
+        与 coord()(整个 roi_front 内随机) 不同: 该算法以中心为锚, 仅在
+        ±offset 像素的小范围内随机, 兼顾"点击精确命中按钮"与"位置不固定
+        防检测"。适用于 roi_front 远大于按钮热区时(如 BOSS_FIRE 100x100
+        但按钮实际只有中部可点), 避免 coord() 随机到按钮外导致点击落空
+        (8-17 主号 DemonEncounter 连点 3 次 BOSS_FIRE 未进集结即此因)。
+
+        Args:
+            offset: 中心向四周的最大偏移像素数, 默认 20。
+
+        Returns:
+            tuple[int, int]: 点击坐标 (x, y), 已 clamp 到图像边界。
+        """
+        x, y, w, h = self.roi_front
+        cx, cy = int(x + w // 2), int(y + h // 2)
+        ox = np.random.randint(-offset, offset + 1)
+        oy = np.random.randint(-offset, offset + 1)
+        return max(0, cx + ox), max(0, cy + oy)
+
     def test_match(self, image: np.array):
         self.debug_mode = True
         if self.is_template_match:

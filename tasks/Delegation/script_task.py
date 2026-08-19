@@ -5,7 +5,12 @@ from time import sleep
 from datetime import time, datetime, timedelta
 
 from module.logger import logger
-from module.exception import TaskEnd
+from module.exception import (
+    TaskEnd,
+    GamePageUnknownError,
+    GameTooManyClickError,
+    GameStuckError,
+)
 from module.base.timer import Timer
 
 from tasks.GameUi.game_ui import GameUi
@@ -17,7 +22,27 @@ from tasks.Delegation.assets import DelegationAssets
 class ScriptTask(GameUi, DelegationAssets):
 
     def run(self):
-        self.goto_page(page_delegation)
+        # 委派页导航失败计数: 连续失败 NAV_FAIL_LIMIT 次放弃本次任务, 不再触发 Restart 无限循环
+        # 根因(8-12/8-13 老区号): 委派页锚点 I_CHECK_DELEGATION 曾零容错失配, goto_page 反复
+        # Transition cannot reach(每轮 8s) -> 往返 6 轮触发 GameTooManyClickError -> script.py
+        # 捕获后 task_call('Restart') 只重启游戏 -> Delegation next_run 仍过期(2023-01-01) ->
+        # 调度器立即再跑 -> 死循环 1 小时(penalty 88)。失败路径从不经过 set_next_run, 故无排期兜底。
+        # 这里在任务层兜底: 导航异常捕获计数, 达阈值 set_next_run(success=False) 走 failure_interval
+        # (1 天) 顺延到明天, 然后 TaskEnd 正常结束, 不抛回调度器, 从源头断掉重启循环。
+        nav_fail_limit = 3
+        for attempt in range(1, nav_fail_limit + 1):
+            try:
+                self.goto_page(page_delegation)
+                break
+            except (GamePageUnknownError, GameTooManyClickError, GameStuckError) as e:
+                logger.warning(f'Delegation: goto page_delegation 第 {attempt}/{nav_fail_limit} 次失败: {e}')
+                if attempt >= nav_fail_limit:
+                    logger.warning(
+                        f'Delegation: 连续 {nav_fail_limit} 次导航失败, 放弃本次任务, 顺延到下次'
+                    )
+                    self.set_next_run(task='Delegation', finish=True, success=False)
+                    raise TaskEnd
+                self.device.sleep(5)
         self.check_reward()
         con: DelegationConfig = self.config.delegation.delegation_config
         if con.miyoshino_painting:

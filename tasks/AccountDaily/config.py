@@ -111,6 +111,13 @@ class AccountDailyItem(ConfigBase):
     # 为防止 OCR 出错, 多个别名以 # 分隔
     account_alias: str = Field(default='', description='account_alias_help')
     apple_or_android: bool = Field(default=True, description='apple_or_android_help')
+    # 是否切换服务器(8-14 新增, 用户优先需求):
+    #   True  = 走完整角色/服务器匹配(switch_character 四态 + switch_svr 兜底)
+    #   False = 切好账号后不展开服务器/角色列表, 直接用账号默认角色进入游戏。
+    #           依赖前提: 账号每次用完都停在目标角色上(用户已确认成立)。
+    #           为什么需要: 8-10 实测同名角色跨服(音起时/砂狐乐园各一个"花尾巴狗"),
+    #           角色列表顺序匹配会点错进回归号; 单角色账号大部分场景根本不需要选角色。
+    switch_svr: bool = Field(default=True, description='switch_svr_help')
     # 该号任务数量: 前端/序列化用它决定输出多少个 task_N 槽位(仿 FindJade 的 sup_account_count 思路)
     task_count: int = Field(default=1, ge=1, le=TASK_SLOT_MAX, description='task_count_help')
     # ---- 任务槽位(静态声明上限, 空槽=Empty 跳过) ----

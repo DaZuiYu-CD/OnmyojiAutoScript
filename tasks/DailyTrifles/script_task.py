@@ -486,16 +486,24 @@ class ScriptTask(GameUi, Summon, DailyTriflesAssets):
                     self.appear_then_click(self.I_HARVEST_MAIL, interval=1.2) or \
                     self.appear_then_click(self.I_HARVEST_MAIL_COPY, interval=1.2):
                 continue
-            if self.appear_then_click(self.I_HARVEST_MAIL_CONFIRM, interval=1):
-                # 2026-08-08 修复: 帧数低时确认弹窗关闭动画慢, 点击后立即截图仍会识别到确认按钮,
-                # 循环连点导致弹窗一直关不掉(实测 12:49 收邮件连点 9 次确认不生效, 卡约 30 秒)。
-                # 点确认后等弹窗消失再继续: 最多等 3 秒给足动画时间; 超时说明本次点击未生效,
-                # 下一轮循环会重试点击(等效"增加点击次数"), 且不会像 wait_until_disappear 一样死等。
-                wait_timer = Timer(3).start()
-                while not wait_timer.reached():
-                    self.screenshot()
-                    if not self.appear(self.I_HARVEST_MAIL_CONFIRM):
-                        break
+            if self.appear(self.I_HARVEST_MAIL_CONFIRM, interval=1):
+                # 2026-08-14 修复(用户建议): 确认弹窗弹出动画期间, 按钮视觉已渲染但
+                # 交互层未就绪(点击被动画吃掉/点空), 立即点击偶发失效。
+                # 日志证据: 09:48:08.646 点一键领取 -> 09:48:09.242 点确认, 间隔仅 0.6s,
+                # 弹窗动画未完成时点击偶发无响应, 需重试。识别到后固定延迟 1s 再点,
+                # 给足动画收尾时间; 点击后仍走 8-08 的"等弹窗消失"兜底。
+                self.device.sleep(1)
+                self.screenshot()
+                if self.appear_then_click(self.I_HARVEST_MAIL_CONFIRM, interval=1):
+                    # 2026-08-08 修复: 帧数低时确认弹窗关闭动画慢, 点击后立即截图仍会识别到确认按钮,
+                    # 循环连点导致弹窗一直关不掉(实测 12:49 收邮件连点 9 次确认不生效, 卡约 30 秒)。
+                    # 点确认后等弹窗消失再继续: 最多等 3 秒给足动画时间; 超时说明本次点击未生效,
+                    # 下一轮循环会重试点击(等效"增加点击次数"), 且不会像 wait_until_disappear 一样死等。
+                    wait_timer = Timer(3).start()
+                    while not wait_timer.reached():
+                        self.screenshot()
+                        if not self.appear(self.I_HARVEST_MAIL_CONFIRM):
+                            break
                 continue
             if self.appear_then_click(self.I_HARVEST_MAIL_ALL, interval=2):
                 timeout_timer.reset()

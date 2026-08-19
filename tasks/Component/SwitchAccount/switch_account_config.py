@@ -18,6 +18,10 @@ class AccountInfo(BaseModel):
     # 为防止ocr出错 暂定格式 字符串以#分割
     account_alias: str = Field(default="", description="account_alias_help")
     apple_or_android: bool = Field(default=True, description="apple_or_android_help")
+    # 是否切换服务器(8-14 新增): False 时账号登录后不展开服务器/角色列表,
+    # 直接用账号默认角色进入游戏(依赖账号每次用完都停在目标角色上)。
+    # 默认 True 保持原行为, 不影响 FindJade 等其他调用方。
+    switch_svr: bool = Field(default=True, description="switch_svr_help")
     # 上一次执行成功的时间 ,防止出错时重复登录浪费时间
     last_complete_time: DateTime = Field(default=DateTime.fromisoformat("2023-01-01 00:00:00"), description="last_complete_time_help")
 
