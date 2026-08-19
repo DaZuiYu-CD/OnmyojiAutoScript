@@ -13,7 +13,7 @@ class ConfigManual:
         > AreaBoss > GoldYoukai > ExperienceYoukai > Nian > Tako > AutoCheckinBigGod > RealmRaid > RyouToppa > DailyTrifles > Exploration
         > Dokan > AbyssShadows > Hunt > GuildBanquet > DemonRetreat > GuildActivityMonitor
         > Orochi > OrochiMoans > OrochiJudgement > Sougenbi > FallenSun > EternitySea > SixRealms > OtherWorldTwilight
-        > ActivityShikigami > WantedQuests
+        > ActivityShikigami > MartialTournament > WantedQuests
         > BondlingFairyland > EvoZone > GoryouRealm > HeroTest > InfiniteBattle > FindJade
         > CollectiveMissions > Guild30Team
         > Pets > TalismanPass > Delegation > Hyakkiyakou

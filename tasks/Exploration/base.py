@@ -6,6 +6,7 @@ from cached_property import cached_property
 from datetime import timedelta, datetime
 from module.atom.gif import RuleGif
 from module.atom.image import RuleImage
+from module.base.timer import Timer
 
 from tasks.Component.SwitchSoul.switch_soul import SwitchSoul
 from tasks.Component.GeneralRoom.general_room import GeneralRoom

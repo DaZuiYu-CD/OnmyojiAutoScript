@@ -32,7 +32,7 @@ class DailyTriflesAssets:
 
 	# Image Rule Assets
 	# 寮祈愿页面标志 
-	I_DT_CHECK_GUILD_WISH = RuleImage(roi_front=(13,569,76,139), roi_back=(0,511,124,209), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_dt_check_guild_wish.png")
+	I_DT_CHECK_GUILD_WISH = RuleImage(roi_front=(872,639,38,38), roi_back=(741,583,425,137), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_dt_check_guild_wish.png")
 	# 赠予 
 	I_DT_GW_DONATE = RuleImage(roi_front=(839,167,109,49), roi_back=(816,90,301,490), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/dt/dt_dt_gw_donate.png")
 	# 交换 
@@ -136,7 +136,7 @@ class DailyTriflesAssets:
 	# 礼包屋 
 	I_ROOM_GIFT = RuleImage(roi_front=(1138,658,52,40), roi_back=(1119,621,103,94), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/store/store_room_gift.png")
 	# description
-	I_GIFT_RECOMMEND = RuleImage(roi_front=(1183,454,53,64), roi_back=(1162,77,98,457), threshold=0.7, method="Template matching", file="./tasks/DailyTrifles/store/store_gift_recommend.png")
+	I_GIFT_RECOMMEND = RuleImage(roi_front=(1183,454,53,64), roi_back=(1162,77,97,545), threshold=0.7, method="Template matching", file="./tasks/DailyTrifles/store/store_gift_recommend.png")
 	# 新版礼包屋右侧竖排"日常"灯笼标签-选中态(页面到达锚点, 7/30商店街改版后I_GIFT_RECOMMEND失效)
 	I_GIFT_DAILY_ON = RuleImage(roi_front=(1152,190,66,95), roi_back=(1130,60,135,580), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/store/store_gift_daily_on.png")
 	# 新版礼包屋右侧竖排"日常"灯笼标签-未选中态(点击切换到日常页; 与选中态互配仅0.47-0.58, 不会误点)
@@ -146,7 +146,7 @@ class DailyTriflesAssets:
 	# 体力 
 	I_SPECIAL_SUSHI = RuleImage(roi_front=(180,130,800,460), roi_back=(180,130,800,460), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/store/store_sushi.png")
 	# 购买时货币类型为勾玉 
-	I_STORE_COST_TYPE_JADE = RuleImage(roi_front=(600,490,50,60), roi_back=(600,490,50,60), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/store/store_cost_type_jade.png")
+	I_STORE_COST_TYPE_JADE = RuleImage(roi_front=(570,362,81,247), roi_back=(570,362,81,247), threshold=0.8, method="Template matching", file="./tasks/DailyTrifles/store/store_cost_type_jade.png")
 
 
 	# Ocr Rule Assets
